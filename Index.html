@@ -24,7 +24,7 @@
     <!-- メインコンテンツ -->
     <main class="main-content">
       <!-- ローディング画面 -->
-      <div id="loading-screen" class="screen active">
+      <div id="loading-screen" class="screen" style="display: flex;">
         <div class="loading-spinner"></div>
         <p>データを読み込んでいます...</p>
       </div>
@@ -100,9 +100,70 @@
         </div>
       </div>
 
-      <!-- 学習画面（ステップ2以降で実装） -->
+      <!-- 学習画面 -->
       <div id="study-screen" class="screen">
-        <p>学習画面（次のステップで実装）</p>
+        <!-- 学習ヘッダー -->
+        <div class="study-header">
+          <button class="btn btn-icon" onclick="App.exitStudy()">
+            <span class="material-icons">arrow_back</span>
+          </button>
+          <div class="study-progress">
+            <span id="study-current">1</span> / <span id="study-total">0</span>
+          </div>
+          <div class="study-actions">
+            <button class="btn btn-icon" id="btn-favorite" onclick="App.toggleFavorite()">
+              <span class="material-icons">star_border</span>
+            </button>
+            <button class="btn btn-icon" id="btn-passed" onclick="App.togglePassed()">
+              <span class="material-icons">check_circle_outline</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- フラッシュカード -->
+        <div class="flashcard-container">
+          <div class="flashcard" id="flashcard" onclick="App.flipCard()">
+            <div class="flashcard-inner">
+              <!-- 表面 -->
+              <div class="flashcard-front" id="card-front">
+                <div class="card-content" id="front-content">
+                  <!-- 動的に生成 -->
+                </div>
+                <div class="card-hint">タップでめくる</div>
+              </div>
+              <!-- 裏面 -->
+              <div class="flashcard-back" id="card-back">
+                <div class="card-content" id="back-content">
+                  <!-- 動的に生成 -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 回答ボタン（裏面表示時のみ） -->
+        <div class="answer-buttons" id="answer-buttons" style="display: none;">
+          <button class="btn btn-answer btn-incorrect" onclick="App.answerCard(false)">
+            <span class="material-icons">close</span>
+            不正解
+          </button>
+          <button class="btn btn-answer btn-correct" onclick="App.answerCard(true)">
+            <span class="material-icons">check</span>
+            正解
+          </button>
+        </div>
+
+        <!-- ナビゲーションボタン -->
+        <div class="nav-buttons">
+          <button class="btn btn-nav" onclick="App.prevCard()" id="btn-prev">
+            <span class="material-icons">chevron_left</span>
+            前へ
+          </button>
+          <button class="btn btn-nav" onclick="App.nextCard()" id="btn-next">
+            次へ
+            <span class="material-icons">chevron_right</span>
+          </button>
+        </div>
       </div>
 
       <!-- 設定画面（ステップ10で実装） -->

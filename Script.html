@@ -14,7 +14,15 @@ const AppState = {
   settings: {},
   decks: { tree: {}, list: [] },
   isLoading: true,
-  error: null
+  error: null,
+  
+  // 学習状態（ステップ2追加）
+  study: {
+    mode: null,           // 'review', 'new', 'all'
+    cards: [],            // 学習対象カード
+    currentIndex: 0,      // 現在のカードインデックス
+    isFlipped: false      // カードがめくられているか
+  }
 };
 
 // ============================================
@@ -45,18 +53,46 @@ const App = {
    * データ読み込み成功時
    */
   onDataLoaded: function(data) {
-    console.log('Data loaded:', data);
-    
-    AppState.fields = data.fields || [];
-    AppState.cards = data.cards || [];
-    AppState.progress = data.progress || {};
-    AppState.settings = data.settings || {};
-    AppState.decks = data.decks || { tree: {}, list: [] };
-    AppState.isLoading = false;
-    
-    this.updateStats();
-    this.updateDebugInfo();
-    this.showScreen('home-screen');
+    try {
+      console.log('=== onDataLoaded START ===');
+      console.log('Data loaded:', data);
+      
+      console.log('Setting AppState...');
+      AppState.fields = data.fields || [];
+      AppState.cards = data.cards || [];
+      AppState.progress = data.progress || {};
+      AppState.settings = data.settings || {};
+      AppState.decks = data.decks || { tree: {}, list: [] };
+      AppState.isLoading = false;
+      console.log('AppState set successfully');
+      
+      console.log('Calling updateStats...');
+      this.updateStats();
+      console.log('updateStats completed');
+      
+      console.log('Calling updateDebugInfo...');
+      this.updateDebugInfo();
+      console.log('updateDebugInfo completed');
+      
+      // ローディング画面を確実に非表示にしてからホーム画面を表示
+      console.log('Hiding loading screen...');
+      const loadingScreen = document.getElementById('loading-screen');
+      console.log('loadingScreen element:', loadingScreen);
+      if (loadingScreen) {
+        loadingScreen.style.display = 'none';
+        loadingScreen.classList.remove('active');
+        console.log('Loading screen hidden');
+      }
+      
+      console.log('Calling showScreen(home-screen)...');
+      this.showScreen('home-screen');
+      console.log('=== onDataLoaded END ===');
+    } catch (error) {
+      console.error('=== ERROR in onDataLoaded ===');
+      console.error('Error:', error);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+    }
   },
 
   /**
@@ -82,13 +118,27 @@ const App = {
    * 画面切り替え
    */
   showScreen: function(screenId) {
+    console.log('Switching to screen:', screenId);
+    
+    // 全画面を非表示
     document.querySelectorAll('.screen').forEach(screen => {
       screen.classList.remove('active');
+      screen.style.display = 'none';
     });
     
+    // 対象画面を表示
     const targetScreen = document.getElementById(screenId);
     if (targetScreen) {
       targetScreen.classList.add('active');
+      // ローディング画面はflexで表示
+      if (screenId === 'loading-screen') {
+        targetScreen.style.display = 'flex';
+      } else {
+        targetScreen.style.display = 'block';
+      }
+      console.log('Screen activated:', screenId);
+    } else {
+      console.error('Screen not found:', screenId);
     }
   },
 
@@ -96,47 +146,83 @@ const App = {
    * 統計情報を更新
    */
   updateStats: function() {
-    const cards = AppState.cards;
-    const progress = AppState.progress;
-    const today = new Date().toISOString().split('T')[0];
-    
-    // 学習済みカード数
-    let studiedCount = 0;
-    let passedCount = 0;
-    let reviewCount = 0;
-    
-    for (const card of cards) {
-      const rowNum = card.rowNumber;
-      const prog = progress[rowNum];
+    try {
+      console.log('=== updateStats START ===');
+      const cards = AppState.cards;
+      const progress = AppState.progress;
+      const today = new Date().toISOString().split('T')[0];
+      console.log('Today:', today, 'Cards count:', cards.length);
       
-      if (prog) {
-        if (prog.correctCount > 0 || prog.incorrectCount > 0) {
-          studiedCount++;
-        }
-        if (prog.passed) {
-          passedCount++;
-        }
-        if (prog.nextReviewDate && prog.nextReviewDate <= today && !prog.passed) {
-          reviewCount++;
+      // 学習済みカード数
+      let studiedCount = 0;
+      let passedCount = 0;
+      let reviewCount = 0;
+      
+      for (const card of cards) {
+        const rowNum = card.rowNumber;
+        const prog = progress[rowNum];
+        
+        if (prog) {
+          if (prog.correctCount > 0 || prog.incorrectCount > 0) {
+            studiedCount++;
+          }
+          if (prog.passed) {
+            passedCount++;
+          }
+          if (prog.nextReviewDate && prog.nextReviewDate <= today && !prog.passed) {
+            reviewCount++;
+          }
         }
       }
+      
+      console.log('Stats calculated:', { studiedCount, passedCount, reviewCount });
+      
+      const statToday = document.getElementById('stat-today');
+      const statTotal = document.getElementById('stat-total');
+      const statPassed = document.getElementById('stat-passed');
+      const statReview = document.getElementById('stat-review');
+      
+      console.log('Stat elements:', { statToday, statTotal, statPassed, statReview });
+      
+      if (statToday) statToday.textContent = '0';
+      if (statTotal) statTotal.textContent = studiedCount + ' / ' + cards.length;
+      if (statPassed) statPassed.textContent = passedCount;
+      if (statReview) statReview.textContent = reviewCount;
+      
+      console.log('=== updateStats END ===');
+    } catch (error) {
+      console.error('=== ERROR in updateStats ===');
+      console.error('Error:', error);
     }
-    
-    document.getElementById('stat-today').textContent = '0'; // TODO: 今日の学習数
-    document.getElementById('stat-total').textContent = `${studiedCount} / ${cards.length}`;
-    document.getElementById('stat-passed').textContent = passedCount;
-    document.getElementById('stat-review').textContent = reviewCount;
   },
 
   /**
    * デバッグ情報を更新（ステップ1用）
    */
   updateDebugInfo: function() {
-    document.getElementById('debug-connection').textContent = '✓ 接続成功';
-    document.getElementById('debug-connection').style.color = 'green';
-    document.getElementById('debug-card-count').textContent = AppState.cards.length;
-    document.getElementById('debug-field-count').textContent = AppState.fields.length;
-    document.getElementById('debug-deck-count').textContent = AppState.decks.list.length;
+    try {
+      console.log('=== updateDebugInfo START ===');
+      
+      const debugConnection = document.getElementById('debug-connection');
+      const debugCardCount = document.getElementById('debug-card-count');
+      const debugFieldCount = document.getElementById('debug-field-count');
+      const debugDeckCount = document.getElementById('debug-deck-count');
+      
+      console.log('Debug elements:', { debugConnection, debugCardCount, debugFieldCount, debugDeckCount });
+      
+      if (debugConnection) {
+        debugConnection.textContent = '✓ 接続成功';
+        debugConnection.style.color = 'green';
+      }
+      if (debugCardCount) debugCardCount.textContent = AppState.cards.length;
+      if (debugFieldCount) debugFieldCount.textContent = AppState.fields.length;
+      if (debugDeckCount) debugDeckCount.textContent = AppState.decks.list.length;
+      
+      console.log('=== updateDebugInfo END ===');
+    } catch (error) {
+      console.error('=== ERROR in updateDebugInfo ===');
+      console.error('Error:', error);
+    }
   },
 
   /**
@@ -159,10 +245,286 @@ const App = {
   },
 
   /**
-   * 学習開始（ステップ2以降で実装）
+   * 学習開始
    */
   startStudy: function(mode) {
-    alert('学習モード: ' + mode + '\n（次のステップで実装）');
+    console.log('Starting study mode:', mode);
+    
+    // 学習対象カードを取得
+    let studyCards = [];
+    const today = new Date().toISOString().split('T')[0];
+    
+    switch (mode) {
+      case 'review':
+        // 今日の復習: 次回復習日が今日以前のカード
+        studyCards = AppState.cards.filter(card => {
+          const prog = AppState.progress[card.rowNumber];
+          if (!prog) return false;
+          return prog.nextReviewDate && prog.nextReviewDate <= today && !prog.passed;
+        });
+        break;
+      case 'new':
+        // 新規学習: まだ学習していないカード
+        studyCards = AppState.cards.filter(card => {
+          const prog = AppState.progress[card.rowNumber];
+          return !prog || (prog.correctCount === 0 && prog.incorrectCount === 0);
+        });
+        break;
+      case 'all':
+        // 全体復習: 全カード
+        studyCards = [...AppState.cards];
+        break;
+    }
+    
+    if (studyCards.length === 0) {
+      alert('学習するカードがありません');
+      return;
+    }
+    
+    // シャッフル（設定に応じて）
+    if (AppState.settings.shuffleCards !== false) {
+      studyCards = this.shuffleArray(studyCards);
+    }
+    
+    // 学習状態を初期化
+    AppState.study.mode = mode;
+    AppState.study.cards = studyCards;
+    AppState.study.currentIndex = 0;
+    AppState.study.isFlipped = false;
+    
+    // 学習画面を表示
+    this.showScreen('study-screen');
+    this.renderCard();
+    this.updateStudyProgress();
+  },
+
+  /**
+   * 配列をシャッフル
+   */
+  shuffleArray: function(array) {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  },
+
+  /**
+   * カードを表示
+   */
+  renderCard: function() {
+    const card = AppState.study.cards[AppState.study.currentIndex];
+    if (!card) return;
+    
+    console.log('Rendering card:', card);
+    
+    // フィールド情報を取得
+    const fields = AppState.fields;
+    
+    // 表面のコンテンツを生成
+    const frontFields = fields
+      .filter(f => f.displaySide === '表')
+      .sort((a, b) => (parseInt(a.displayOrder) || 99) - (parseInt(b.displayOrder) || 99));
+    
+    // 裏面のコンテンツを生成
+    const backFields = fields
+      .filter(f => f.displaySide === '裏')
+      .sort((a, b) => (parseInt(a.displayOrder) || 99) - (parseInt(b.displayOrder) || 99));
+    
+    // 表面を描画
+    const frontContent = document.getElementById('front-content');
+    frontContent.innerHTML = frontFields.map((field, index) => {
+      const value = card.fields[field.name] || '';
+      const isFirst = index === 0;
+      return '<div class="card-field">' +
+        '<div class="card-field-label">' + this.escapeHtml(field.name) + '</div>' +
+        '<div class="card-field-value' + (isFirst ? ' large' : '') + '">' + this.escapeHtml(value) + '</div>' +
+      '</div>';
+    }).join('');
+    
+    // 裏面を描画
+    const backContent = document.getElementById('back-content');
+    backContent.innerHTML = backFields.map((field, index) => {
+      const value = card.fields[field.name] || '';
+      const isFirst = index === 0;
+      return '<div class="card-field">' +
+        '<div class="card-field-label">' + this.escapeHtml(field.name) + '</div>' +
+        '<div class="card-field-value' + (isFirst ? ' large' : '') + '">' + this.escapeHtml(value) + '</div>' +
+      '</div>';
+    }).join('');
+    
+    // カードを表面にリセット
+    const flashcard = document.getElementById('flashcard');
+    flashcard.classList.remove('flipped');
+    AppState.study.isFlipped = false;
+    
+    // 回答ボタンを非表示
+    document.getElementById('answer-buttons').style.display = 'none';
+    
+    // お気に入り・合格状態を更新
+    this.updateCardButtons(card);
+    
+    // ナビゲーションボタンの状態を更新
+    this.updateNavButtons();
+  },
+
+  /**
+   * HTMLエスケープ
+   */
+  escapeHtml: function(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  },
+
+  /**
+   * カードをめくる
+   */
+  flipCard: function() {
+    const flashcard = document.getElementById('flashcard');
+    
+    if (AppState.study.isFlipped) {
+      flashcard.classList.remove('flipped');
+      AppState.study.isFlipped = false;
+      document.getElementById('answer-buttons').style.display = 'none';
+    } else {
+      flashcard.classList.add('flipped');
+      AppState.study.isFlipped = true;
+      document.getElementById('answer-buttons').style.display = 'flex';
+    }
+  },
+
+  /**
+   * 学習進捗を更新
+   */
+  updateStudyProgress: function() {
+    document.getElementById('study-current').textContent = AppState.study.currentIndex + 1;
+    document.getElementById('study-total').textContent = AppState.study.cards.length;
+  },
+
+  /**
+   * カードのお気に入り・合格ボタンを更新
+   */
+  updateCardButtons: function(card) {
+    const prog = AppState.progress[card.rowNumber] || {};
+    
+    const btnFavorite = document.getElementById('btn-favorite');
+    const btnPassed = document.getElementById('btn-passed');
+    
+    // お気に入り
+    if (prog.favorite) {
+      btnFavorite.classList.add('active');
+      btnFavorite.querySelector('.material-icons').textContent = 'star';
+    } else {
+      btnFavorite.classList.remove('active');
+      btnFavorite.querySelector('.material-icons').textContent = 'star_border';
+    }
+    
+    // 合格
+    if (prog.passed) {
+      btnPassed.classList.add('passed');
+      btnPassed.querySelector('.material-icons').textContent = 'check_circle';
+    } else {
+      btnPassed.classList.remove('passed');
+      btnPassed.querySelector('.material-icons').textContent = 'check_circle_outline';
+    }
+  },
+
+  /**
+   * ナビゲーションボタンの状態を更新
+   */
+  updateNavButtons: function() {
+    const btnPrev = document.getElementById('btn-prev');
+    const btnNext = document.getElementById('btn-next');
+    
+    btnPrev.disabled = AppState.study.currentIndex === 0;
+    btnNext.disabled = AppState.study.currentIndex >= AppState.study.cards.length - 1;
+  },
+
+  /**
+   * 前のカードへ
+   */
+  prevCard: function() {
+    if (AppState.study.currentIndex > 0) {
+      AppState.study.currentIndex--;
+      this.renderCard();
+      this.updateStudyProgress();
+    }
+  },
+
+  /**
+   * 次のカードへ
+   */
+  nextCard: function() {
+    if (AppState.study.currentIndex < AppState.study.cards.length - 1) {
+      AppState.study.currentIndex++;
+      this.renderCard();
+      this.updateStudyProgress();
+    } else {
+      // 学習完了
+      this.finishStudy();
+    }
+  },
+
+  /**
+   * 回答を記録（ステップ5で詳細実装）
+   */
+  answerCard: function(isCorrect) {
+    console.log('Answer:', isCorrect ? 'Correct' : 'Incorrect');
+    // ステップ5で実装: 進捗を更新してサーバーに保存
+    this.nextCard();
+  },
+
+  /**
+   * お気に入り切り替え（ステップ5で詳細実装）
+   */
+  toggleFavorite: function() {
+    const card = AppState.study.cards[AppState.study.currentIndex];
+    const prog = AppState.progress[card.rowNumber] || {};
+    prog.favorite = !prog.favorite;
+    AppState.progress[card.rowNumber] = prog;
+    this.updateCardButtons(card);
+    console.log('Favorite toggled:', prog.favorite);
+    // ステップ5で実装: サーバーに保存
+  },
+
+  /**
+   * 合格切り替え（ステップ5で詳細実装）
+   */
+  togglePassed: function() {
+    const card = AppState.study.cards[AppState.study.currentIndex];
+    const prog = AppState.progress[card.rowNumber] || {};
+    prog.passed = !prog.passed;
+    AppState.progress[card.rowNumber] = prog;
+    this.updateCardButtons(card);
+    console.log('Passed toggled:', prog.passed);
+    // ステップ5で実装: サーバーに保存
+  },
+
+  /**
+   * 学習終了
+   */
+  finishStudy: function() {
+    alert('学習完了！');
+    this.exitStudy();
+  },
+
+  /**
+   * 学習を終了してホームに戻る
+   */
+  exitStudy: function() {
+    AppState.study.mode = null;
+    AppState.study.cards = [];
+    AppState.study.currentIndex = 0;
+    AppState.study.isFlipped = false;
+    
+    this.updateStats();
+    this.showScreen('home-screen');
   },
 
   /**
