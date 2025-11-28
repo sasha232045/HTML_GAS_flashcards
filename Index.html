@@ -111,6 +111,12 @@
             <span id="study-current">1</span> / <span id="study-total">0</span>
           </div>
           <div class="study-actions">
+            <button class="btn btn-icon" id="btn-autoplay" onclick="App.toggleAutoPlay()" title="連続再生">
+              <span class="material-icons">play_circle</span>
+            </button>
+            <button class="btn btn-icon" id="btn-repeat" onclick="App.toggleRepeat()" title="リピート">
+              <span class="material-icons">repeat</span>
+            </button>
             <button class="btn btn-icon" id="btn-speech" onclick="App.speakCurrentCard()" title="読み上げ">
               <span class="material-icons">volume_up</span>
             </button>
