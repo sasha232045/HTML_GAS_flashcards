@@ -22,7 +22,8 @@ const AppState = {
     cards: [],            // 学習対象カード
     currentIndex: 0,      // 現在のカードインデックス
     isFlipped: false,     // カードがめくられているか
-    sessionAnswers: {}    // 今回のセッションでの回答状態 {rowNumber: 'correct'|'incorrect'|null}
+    sessionAnswers: {},   // 今回のセッションでの回答状態
+    isSpeaking: false     // 読み上げ中かどうか
   },
   
   // デッキ選択状態（ステップ3追加）
@@ -329,6 +330,9 @@ const App = {
    * カードを表示
    */
   renderCard: function() {
+    // 読み上げ中なら停止
+    this.stopSpeech();
+    
     const card = AppState.study.cards[AppState.study.currentIndex];
     if (!card) return;
     
@@ -657,11 +661,15 @@ const App = {
    * 学習を終了してホームに戻る
    */
   exitStudy: function() {
+    // 読み上げを停止
+    this.stopSpeech();
+    
     AppState.study.mode = null;
     AppState.study.cards = [];
     AppState.study.currentIndex = 0;
     AppState.study.isFlipped = false;
     AppState.study.sessionAnswers = {}; // セッション回答をクリア
+    AppState.study.isSpeaking = false;
     
     this.updateStats();
     this.showScreen('home-screen');
@@ -972,6 +980,157 @@ const App = {
     this.showScreen('study-screen');
     this.renderCard();
     this.updateStudyProgress();
+  },
+
+  // ============================================
+  // 読み上げ機能（ステップ6）
+  // ============================================
+
+  /**
+   * 現在のカードを読み上げ
+   */
+  speakCurrentCard: function() {
+    // 読み上げ中なら停止
+    if (AppState.study.isSpeaking) {
+      this.stopSpeech();
+      return;
+    }
+    
+    const card = AppState.study.cards[AppState.study.currentIndex];
+    if (!card) return;
+    
+    // 読み上げ順序に従ってフィールドを取得
+    const speechFields = AppState.fields
+      .filter(f => f.speechOrder && f.speechOrder !== '-' && f.speechOrder !== '')
+      .sort((a, b) => (parseInt(a.speechOrder) || 99) - (parseInt(b.speechOrder) || 99));
+    
+    if (speechFields.length === 0) {
+      console.log('No speech fields configured');
+      return;
+    }
+    
+    // 読み上げテキストを準備
+    const speechItems = speechFields.map(field => {
+      return {
+        text: card.fields[field.name] || '',
+        lang: this.detectLanguage(field.name, card.fields[field.name])
+      };
+    }).filter(item => item.text);
+    
+    if (speechItems.length === 0) return;
+    
+    // 順番に読み上げ
+    this.speakSequence(speechItems, 0);
+  },
+
+  /**
+   * 言語を推定
+   */
+  detectLanguage: function(fieldName, text) {
+    // フィールド名から推定
+    const lowerName = fieldName.toLowerCase();
+    if (lowerName.includes('英語') || lowerName.includes('english') || lowerName === 'en') {
+      return 'en-US';
+    }
+    if (lowerName.includes('日本語') || lowerName.includes('japanese') || lowerName === 'ja' || 
+        lowerName.includes('読み') || lowerName.includes('例文')) {
+      return 'ja-JP';
+    }
+    
+    // テキストの内容から推定
+    if (text) {
+      // 日本語文字が含まれているか
+      if (/[぀-ゟ゠-ヿ一-龯]/.test(text)) {
+        return 'ja-JP';
+      }
+    }
+    
+    // デフォルトは英語
+    return 'en-US';
+  },
+
+  /**
+   * 順番に読み上げ
+   */
+  speakSequence: function(items, index) {
+    if (index >= items.length) {
+      // 読み上げ完了
+      this.setSpeakingState(false);
+      return;
+    }
+    
+    const item = items[index];
+    this.speak(item.text, item.lang, () => {
+      // 次のアイテムへ
+      setTimeout(() => {
+        this.speakSequence(items, index + 1);
+      }, 300); // アイテム間の間隔
+    });
+  },
+
+  /**
+   * テキストを読み上げ
+   */
+  speak: function(text, lang, onEnd) {
+    if (!('speechSynthesis' in window)) {
+      console.warn('Speech synthesis not supported');
+      if (onEnd) onEnd();
+      return;
+    }
+    
+    // 既存の読み上げを停止
+    window.speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang;
+    
+    // 読み上げ速度を設定
+    if (lang === 'en-US') {
+      utterance.rate = AppState.settings.speechRateEn || 1.0;
+    } else {
+      utterance.rate = AppState.settings.speechRateJa || 1.0;
+    }
+    
+    this.setSpeakingState(true);
+    
+    utterance.onend = () => {
+      if (onEnd) onEnd();
+    };
+    
+    utterance.onerror = (e) => {
+      console.error('Speech error:', e);
+      this.setSpeakingState(false);
+      if (onEnd) onEnd();
+    };
+    
+    window.speechSynthesis.speak(utterance);
+  },
+
+  /**
+   * 読み上げを停止
+   */
+  stopSpeech: function() {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    this.setSpeakingState(false);
+  },
+
+  /**
+   * 読み上げ状態を設定
+   */
+  setSpeakingState: function(isSpeaking) {
+    AppState.study.isSpeaking = isSpeaking;
+    const btn = document.getElementById('btn-speech');
+    if (btn) {
+      if (isSpeaking) {
+        btn.classList.add('speaking');
+        btn.querySelector('.material-icons').textContent = 'stop';
+      } else {
+        btn.classList.remove('speaking');
+        btn.querySelector('.material-icons').textContent = 'volume_up';
+      }
+    }
   },
 
   /**
