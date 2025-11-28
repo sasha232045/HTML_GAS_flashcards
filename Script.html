@@ -32,7 +32,13 @@ const AppState = {
     isSpeaking: false,
     isAutoPlay: false,
     isRepeat: false
-  }
+  },
+  
+  // 一覧読み上げ状態
+  listAutoPlay: false,
+  listAutoPlayStopped: false,
+  listRepeat: false,
+  listSpeechLangFilter: 'all' // 'all', 'en', 'ja'
 };
 
 // スプレッドシートURL
@@ -801,10 +807,24 @@ const App = {
     const card = AppState.cards.find(c => c.rowNumber === rowNumber);
     if (!card) return;
     
-    // 読み上げ対象フィールドを取得（listSpeechOrder使用）
-    const fields = AppState.fields
-      .filter(f => f.listSpeechOrder && f.listSpeechOrder !== '-' && f.listSpeechOrder !== '')
+    // 読み上げ対象フィールドを取得（listSpeechOrder使用、数字のみ有効）
+    let fields = AppState.fields
+      .filter(f => this.isValidSpeechOrder(f.listSpeechOrder))
       .sort((a, b) => (parseInt(a.listSpeechOrder) || 99) - (parseInt(b.listSpeechOrder) || 99));
+    
+    // 一覧読み上げフィルター（英語のみ/日本語のみ）
+    const langFilter = AppState.listSpeechLangFilter || 'all';
+    if (langFilter === 'en') {
+      fields = fields.filter(f => {
+        const lang = Speech.detectLanguage(f.name, card.fields[f.name]);
+        return lang === 'en-US';
+      });
+    } else if (langFilter === 'ja') {
+      fields = fields.filter(f => {
+        const lang = Speech.detectLanguage(f.name, card.fields[f.name]);
+        return lang === 'ja-JP';
+      });
+    }
     
     if (fields.length === 0) return;
     
@@ -817,7 +837,105 @@ const App = {
     
     Speech.currentListRowNumber = rowNumber;
     this.updateListSpeakingState(rowNumber);
-    Speech.speakSequence(items, 0, null, true); // useListRate = true
+    Speech.speakSequence(items, 0, () => {
+      // 連続再生モードの場合、次のカードを読み上げ
+      if (AppState.listAutoPlay && !AppState.listAutoPlayStopped) {
+        this.playNextCardInList(rowNumber);
+      }
+    }, true); // useListRate = true
+  },
+
+  // 一覧での連続再生：次のカードを読み上げ
+  playNextCardInList: function(currentRowNumber) {
+    const container = document.getElementById('card-list-container');
+    const items = container.querySelectorAll('.card-list-item');
+    let foundCurrent = false;
+    let nextRowNumber = null;
+    
+    for (const item of items) {
+      const row = parseInt(item.getAttribute('data-row'));
+      if (foundCurrent) {
+        nextRowNumber = row;
+        break;
+      }
+      if (row === currentRowNumber) {
+        foundCurrent = true;
+      }
+    }
+    
+    if (nextRowNumber) {
+      // 少し間を空けて次を再生
+      setTimeout(() => {
+        if (AppState.listAutoPlay && !AppState.listAutoPlayStopped) {
+          this.speakCardInList(nextRowNumber, null);
+        }
+      }, 500);
+    } else if (AppState.listRepeat) {
+      // リピートモードの場合、最初に戻る
+      const firstItem = items[0];
+      if (firstItem) {
+        const firstRow = parseInt(firstItem.getAttribute('data-row'));
+        setTimeout(() => {
+          if (AppState.listAutoPlay && !AppState.listAutoPlayStopped) {
+            this.speakCardInList(firstRow, null);
+          }
+        }, 500);
+      }
+    } else {
+      // 連続再生終了
+      AppState.listAutoPlay = false;
+      this.updateListSpeechButtons();
+    }
+  },
+
+  // 一覧の連続再生をトグル
+  toggleListAutoPlay: function() {
+    AppState.listAutoPlay = !AppState.listAutoPlay;
+    AppState.listAutoPlayStopped = false;
+    this.updateListSpeechButtons();
+    
+    if (AppState.listAutoPlay) {
+      // 最初のカードから再生開始
+      const container = document.getElementById('card-list-container');
+      const firstItem = container.querySelector('.card-list-item');
+      if (firstItem) {
+        const rowNumber = parseInt(firstItem.getAttribute('data-row'));
+        this.speakCardInList(rowNumber, null);
+      }
+    } else {
+      AppState.listAutoPlayStopped = true;
+      Speech.stop();
+    }
+  },
+
+  // 一覧のリピートをトグル
+  toggleListRepeat: function() {
+    AppState.listRepeat = !AppState.listRepeat;
+    this.updateListSpeechButtons();
+  },
+
+  // 一覧の言語フィルターを設定
+  setListSpeechLangFilter: function(filter) {
+    AppState.listSpeechLangFilter = filter;
+    this.updateListSpeechButtons();
+  },
+
+  // 一覧の読み上げボタンを更新
+  updateListSpeechButtons: function() {
+    const autoPlayBtn = document.getElementById('list-autoplay-btn');
+    const repeatBtn = document.getElementById('list-repeat-btn');
+    const langSelect = document.getElementById('list-speech-lang');
+    
+    if (autoPlayBtn) {
+      autoPlayBtn.classList.toggle('active', AppState.listAutoPlay);
+      autoPlayBtn.querySelector('.material-icons').textContent = AppState.listAutoPlay ? 'pause_circle' : 'play_circle';
+    }
+    if (repeatBtn) {
+      repeatBtn.classList.toggle('active', AppState.listRepeat);
+    }
+    if (langSelect) {
+      langSelect.value = AppState.listSpeechLangFilter || 'all';
+    }
   },
 
   // 一覧の読み上げ状態を更新
@@ -889,7 +1007,10 @@ const App = {
     const container = document.getElementById('card-edit-content');
     let html = '';
     
-    AppState.fields.forEach(field => {
+    // 進捗列は除外して表示
+    const editableFields = AppState.fields.filter(f => !f.isProgressColumn);
+    
+    editableFields.forEach(field => {
       const value = card.fields[field.name] || '';
       const side = field.displaySide === '表' ? '表面' : (field.displaySide === '裏' ? '裏面' : '');
       
@@ -930,9 +1051,10 @@ const App = {
     const card = AppState.editingCard;
     const rowNumber = card.rowNumber;
     
-    // フィールド値を収集
+    // フィールド値を収集（進捗列以外）
     const updatedFields = {};
-    AppState.fields.forEach(field => {
+    const editableFields = AppState.fields.filter(f => !f.isProgressColumn);
+    editableFields.forEach(field => {
       const textarea = document.getElementById('edit-field-' + field.name);
       if (textarea) {
         updatedFields[field.name] = textarea.value;
@@ -1028,11 +1150,18 @@ const App = {
   // 読み上げ
   speakCurrentCard: function() { if (AppState.study.isSpeaking) { Speech.stop(); return; } this.speakCurrentSide(); },
 
+  // 読み上げ順序が有効な数値かどうかを判定
+  isValidSpeechOrder: function(value) {
+    if (value === null || value === undefined || value === '') return false;
+    const strValue = String(value).trim();
+    return /^\d+$/.test(strValue);
+  },
+
   speakCurrentSide: function(onComplete) {
     const card = AppState.study.cards[AppState.study.currentIndex];
     if (!card) { if (onComplete) onComplete(); return; }
     const side = AppState.study.isFlipped ? '裏' : '表';
-    const fields = AppState.fields.filter(f => f.displaySide === side && f.speechOrder && f.speechOrder !== '-' && f.speechOrder !== '')
+    const fields = AppState.fields.filter(f => f.displaySide === side && this.isValidSpeechOrder(f.speechOrder))
       .sort((a, b) => (parseInt(a.speechOrder) || 99) - (parseInt(b.speechOrder) || 99));
     if (fields.length === 0) { if (onComplete) onComplete(); return; }
     const items = fields.map(f => ({ text: card.fields[f.name] || '', lang: Speech.detectLanguage(f.name, card.fields[f.name]) })).filter(i => i.text);

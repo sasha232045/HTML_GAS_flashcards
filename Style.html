@@ -1257,6 +1257,68 @@ body {
   background: white;
 }
 
+/* 読み上げ設定 */
+.card-list-speech-settings {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-bottom: 1px solid #5a6dd0;
+}
+
+.speech-control-group {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.speech-control-btn {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: white !important;
+  padding: 0.5rem !important;
+  border-radius: 50% !important;
+}
+
+.speech-control-btn:hover {
+  background: rgba(255, 255, 255, 0.3) !important;
+}
+
+.speech-control-btn.active {
+  background: rgba(255, 255, 255, 0.9) !important;
+  color: #667eea !important;
+}
+
+.speech-control-btn.active .material-icons {
+  color: #667eea !important;
+}
+
+.speech-lang-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.speech-lang-group label {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+}
+
+.speech-lang-group select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+.speech-lang-group select option {
+  background: #667eea;
+  color: white;
+}
+
 .card-list-container {
   padding: 0.5rem;
   overflow-y: auto;

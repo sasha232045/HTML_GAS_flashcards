@@ -370,6 +370,26 @@
           </div>
         </div>
 
+        <!-- 読み上げ設定 -->
+        <div class="card-list-speech-settings">
+          <div class="speech-control-group">
+            <button class="btn btn-icon speech-control-btn" id="list-autoplay-btn" onclick="App.toggleListAutoPlay()" title="連続再生">
+              <span class="material-icons">play_circle</span>
+            </button>
+            <button class="btn btn-icon speech-control-btn" id="list-repeat-btn" onclick="App.toggleListRepeat()" title="リピート">
+              <span class="material-icons">repeat</span>
+            </button>
+          </div>
+          <div class="speech-lang-group">
+            <label>読み上げ:</label>
+            <select id="list-speech-lang" onchange="App.setListSpeechLangFilter(this.value)">
+              <option value="all">すべて</option>
+              <option value="en">英語のみ</option>
+              <option value="ja">日本語のみ</option>
+            </select>
+          </div>
+        </div>
+
         <!-- カード一覧 -->
         <div class="card-list-container" id="card-list-container">
           <!-- 動的に生成 -->
