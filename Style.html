@@ -375,6 +375,8 @@ body {
 .flashcard-container {
   perspective: 1000px;
   margin-bottom: 1.5rem;
+  position: relative;
+  overflow: hidden;
 }
 
 .flashcard {
@@ -382,6 +384,34 @@ body {
   min-height: 300px;
   cursor: pointer;
   position: relative;
+  transition: transform 0.4s ease-out, opacity 0.4s ease-out;
+}
+
+/* カードスライドアニメーション */
+.flashcard.slide-out-left {
+  transform: translateX(-120%);
+  opacity: 0;
+}
+
+.flashcard.slide-in-right {
+  transform: translateX(120%);
+  opacity: 0;
+}
+
+.flashcard.slide-in-active {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+/* 前のカードへのアニメーション */
+.flashcard.slide-out-right {
+  transform: translateX(120%);
+  opacity: 0;
+}
+
+.flashcard.slide-in-left {
+  transform: translateX(-120%);
+  opacity: 0;
 }
 
 .flashcard-inner {
