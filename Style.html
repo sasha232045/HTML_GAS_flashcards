@@ -954,6 +954,182 @@ body {
 }
 
 /* ============================================
+   設定・統計画面
+   ============================================ */
+.settings-content {
+  padding: 1rem;
+}
+
+.settings-content .setting-section {
+  background: white;
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.settings-content .setting-section h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 1rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.stats-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.stat-row span:first-child {
+  color: #555;
+  font-size: 0.9rem;
+}
+
+.stat-row span:last-child {
+  font-weight: 600;
+  color: #333;
+}
+
+.stat-row.highlight {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.stat-row.highlight span {
+  color: white !important;
+}
+
+.stat-row.highlight span:last-child {
+  font-size: 1.2rem;
+}
+
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.setting-row:last-child {
+  border-bottom: none;
+}
+
+.setting-row label {
+  color: #555;
+  font-size: 0.9rem;
+}
+
+.setting-row span {
+  font-weight: 500;
+  color: #333;
+}
+
+.settings-content .setting-hint {
+  color: #888;
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  text-align: center;
+}
+
+/* 設定スライダー */
+.setting-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.setting-slider-row:last-child {
+  border-bottom: none;
+}
+
+.setting-slider-row label {
+  min-width: 60px;
+  color: #555;
+  font-size: 0.9rem;
+}
+
+.setting-slider-row input[type="range"] {
+  flex: 1;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #e0e0e0;
+  border-radius: 3px;
+  outline: none;
+}
+
+.setting-slider-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.setting-slider-row input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.setting-slider-row span {
+  min-width: 50px;
+  text-align: right;
+  font-weight: 600;
+  color: #333;
+  font-size: 0.9rem;
+}
+
+/* スプレッドシートリンク */
+.spreadsheet-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, #34a853 0%, #0f9d58 100%);
+  color: white;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 500;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.spreadsheet-link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(15, 157, 88, 0.4);
+}
+
+.spreadsheet-link .material-icons {
+  font-size: 1.2rem;
+}
+
+/* ============================================
    レスポンシブ
    ============================================ */
 @media (min-width: 600px) {

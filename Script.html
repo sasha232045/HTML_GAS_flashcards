@@ -1,401 +1,67 @@
 <script>
 /**
  * GAS フラッシュカード - クライアントサイドJavaScript
- * ステップ1: 基本構造 + スプレッドシート接続
+ * リファクタリング版 + ステップ8: 統計表示
  */
 
 // ============================================
 // グローバル状態
 // ============================================
 const AppState = {
+  // データ
   fields: [],
   cards: [],
   progress: {},
   settings: {},
   decks: { tree: {}, list: [] },
+  
+  // アプリ状態
   isLoading: true,
   error: null,
+  selectedDeck: null,
+  todayStudyCount: 0,
   
-  // 学習状態（ステップ2追加）
+  // 学習状態
   study: {
-    mode: null,           // 'review', 'new', 'all'
-    cards: [],            // 学習対象カード
-    currentIndex: 0,      // 現在のカードインデックス
-    isFlipped: false,     // カードがめくられているか
-    sessionAnswers: {},   // 今回のセッションでの回答状態
-    isSpeaking: false,    // 読み上げ中かどうか
-    isAutoPlay: false,    // 連続再生モード
-    isRepeat: false       // リピートモード
-  },
-  
-  // デッキ選択状態（ステップ3追加）
-  selectedDeck: null,      // 選択中のデッキパス（nullは全デッキ）
-  
-  // 学習設定（ステップ4追加）
-  studySettings: {
-    mode: 'all',           // 'all', 'review', 'new'
-    rangeStart: null,      // 開始行番号
-    rangeEnd: null,        // 終了行番号
-    filterFavorite: false, // お気に入りのみ
-    filterNotPassed: false,// 未合格のみ
-    shuffle: true          // シャッフル
+    mode: null,
+    cards: [],
+    currentIndex: 0,
+    isFlipped: false,
+    sessionAnswers: {},
+    isSpeaking: false,
+    isAutoPlay: false,
+    isRepeat: false
   }
 };
 
+// スプレッドシートURL
+const SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1i5YCfwU_IJYC-4EWZQsBxIOVczdrJShvInJZGPxmZ0U/';
+
 // ============================================
-// アプリケーションメイン
+// 定数
 // ============================================
-const App = {
-  /**
-   * 初期化
-   */
-  init: function() {
-    console.log('App initializing...');
-    this.loadInitialData();
-  },
+const ANIMATION_DURATION = {
+  SLIDE: 400,
+  FLIP: 600,
+  FEEDBACK: 500
+};
 
-  /**
-   * 初期データを読み込み
-   */
-  loadInitialData: function() {
-    this.showScreen('loading-screen');
-    
-    google.script.run
-      .withSuccessHandler(this.onDataLoaded.bind(this))
-      .withFailureHandler(this.onDataError.bind(this))
-      .getInitialData();
-  },
+const DEFAULT_SETTINGS = {
+  speechRateEn: 1.0,
+  speechRateJa: 1.0,
+  waitTimeAfterFlip: 0,
+  waitTimeBetweenCards: 0,
+  interval_1: 1,
+  interval_2: 3,
+  interval_3: 7,
+  interval_4: 14,
+  interval_5: 30
+};
 
-  /**
-   * データ読み込み成功時
-   */
-  onDataLoaded: function(data) {
-    try {
-      console.log('=== onDataLoaded START ===');
-      console.log('Data loaded:', data);
-      
-      console.log('Setting AppState...');
-      AppState.fields = data.fields || [];
-      AppState.cards = data.cards || [];
-      AppState.progress = data.progress || {};
-      AppState.settings = data.settings || {};
-      AppState.decks = data.decks || { tree: {}, list: [] };
-      AppState.isLoading = false;
-      console.log('AppState set successfully');
-      
-      console.log('Calling updateStats...');
-      this.updateStats();
-      console.log('updateStats completed');
-      
-      console.log('Calling updateDebugInfo...');
-      this.updateDebugInfo();
-      console.log('updateDebugInfo completed');
-      
-      // ローディング画面を確実に非表示にしてからホーム画面を表示
-      console.log('Hiding loading screen...');
-      const loadingScreen = document.getElementById('loading-screen');
-      console.log('loadingScreen element:', loadingScreen);
-      if (loadingScreen) {
-        loadingScreen.style.display = 'none';
-        loadingScreen.classList.remove('active');
-        console.log('Loading screen hidden');
-      }
-      
-      console.log('Calling showScreen(home-screen)...');
-      this.showScreen('home-screen');
-      console.log('=== onDataLoaded END ===');
-    } catch (error) {
-      console.error('=== ERROR in onDataLoaded ===');
-      console.error('Error:', error);
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
-    }
-  },
-
-  /**
-   * データ読み込みエラー時
-   */
-  onDataError: function(error) {
-    console.error('Data load error:', error);
-    AppState.error = error;
-    AppState.isLoading = false;
-    
-    document.getElementById('error-message').textContent = error.message || 'データの読み込みに失敗しました';
-    this.showScreen('error-screen');
-  },
-
-  /**
-   * 再試行
-   */
-  retry: function() {
-    this.loadInitialData();
-  },
-
-  /**
-   * 画面切り替え
-   */
-  showScreen: function(screenId) {
-    console.log('Switching to screen:', screenId);
-    
-    // 全画面を非表示
-    document.querySelectorAll('.screen').forEach(screen => {
-      screen.classList.remove('active');
-      screen.style.display = 'none';
-    });
-    
-    // 対象画面を表示
-    const targetScreen = document.getElementById(screenId);
-    if (targetScreen) {
-      targetScreen.classList.add('active');
-      // ローディング画面はflexで表示
-      if (screenId === 'loading-screen') {
-        targetScreen.style.display = 'flex';
-      } else {
-        targetScreen.style.display = 'block';
-      }
-      console.log('Screen activated:', screenId);
-    } else {
-      console.error('Screen not found:', screenId);
-    }
-  },
-
-  /**
-   * 統計情報を更新
-   */
-  updateStats: function() {
-    try {
-      console.log('=== updateStats START ===');
-      const cards = AppState.cards;
-      const progress = AppState.progress;
-      const today = new Date().toISOString().split('T')[0];
-      console.log('Today:', today, 'Cards count:', cards.length);
-      
-      // 学習済みカード数
-      let studiedCount = 0;
-      let passedCount = 0;
-      let reviewCount = 0;
-      
-      for (const card of cards) {
-        const rowNum = card.rowNumber;
-        const prog = progress[rowNum];
-        
-        if (prog) {
-          if (prog.correctCount > 0 || prog.incorrectCount > 0) {
-            studiedCount++;
-          }
-          if (prog.passed) {
-            passedCount++;
-          }
-          if (prog.nextReviewDate && prog.nextReviewDate <= today && !prog.passed) {
-            reviewCount++;
-          }
-        }
-      }
-      
-      console.log('Stats calculated:', { studiedCount, passedCount, reviewCount });
-      
-      const statToday = document.getElementById('stat-today');
-      const statTotal = document.getElementById('stat-total');
-      const statPassed = document.getElementById('stat-passed');
-      const statReview = document.getElementById('stat-review');
-      
-      console.log('Stat elements:', { statToday, statTotal, statPassed, statReview });
-      
-      if (statToday) statToday.textContent = '0';
-      if (statTotal) statTotal.textContent = studiedCount + ' / ' + cards.length;
-      if (statPassed) statPassed.textContent = passedCount;
-      if (statReview) statReview.textContent = reviewCount;
-      
-      console.log('=== updateStats END ===');
-    } catch (error) {
-      console.error('=== ERROR in updateStats ===');
-      console.error('Error:', error);
-    }
-  },
-
-  /**
-   * デバッグ情報を更新（ステップ1用）
-   */
-  updateDebugInfo: function() {
-    try {
-      console.log('=== updateDebugInfo START ===');
-      
-      const debugConnection = document.getElementById('debug-connection');
-      const debugCardCount = document.getElementById('debug-card-count');
-      const debugFieldCount = document.getElementById('debug-field-count');
-      const debugDeckCount = document.getElementById('debug-deck-count');
-      
-      console.log('Debug elements:', { debugConnection, debugCardCount, debugFieldCount, debugDeckCount });
-      
-      if (debugConnection) {
-        debugConnection.textContent = '✓ 接続成功';
-        debugConnection.style.color = 'green';
-      }
-      if (debugCardCount) debugCardCount.textContent = AppState.cards.length;
-      if (debugFieldCount) debugFieldCount.textContent = AppState.fields.length;
-      if (debugDeckCount) debugDeckCount.textContent = AppState.decks.list.length;
-      
-      console.log('=== updateDebugInfo END ===');
-    } catch (error) {
-      console.error('=== ERROR in updateDebugInfo ===');
-      console.error('Error:', error);
-    }
-  },
-
-  /**
-   * 生データを表示（ステップ1用）
-   */
-  showRawData: function() {
-    const rawDataEl = document.getElementById('debug-raw-data');
-    if (rawDataEl.classList.contains('show')) {
-      rawDataEl.classList.remove('show');
-    } else {
-      rawDataEl.textContent = JSON.stringify({
-        fields: AppState.fields,
-        cards: AppState.cards,
-        progress: AppState.progress,
-        settings: AppState.settings,
-        decks: AppState.decks
-      }, null, 2);
-      rawDataEl.classList.add('show');
-    }
-  },
-
-  /**
-   * 学習開始
-   */
-  startStudy: function(mode) {
-    console.log('Starting study mode:', mode);
-    
-    // 学習対象カードを取得
-    let studyCards = [];
-    const today = new Date().toISOString().split('T')[0];
-    
-    switch (mode) {
-      case 'review':
-        // 今日の復習: 次回復習日が今日以前のカード
-        studyCards = AppState.cards.filter(card => {
-          const prog = AppState.progress[card.rowNumber];
-          if (!prog) return false;
-          return prog.nextReviewDate && prog.nextReviewDate <= today && !prog.passed;
-        });
-        break;
-      case 'new':
-        // 新規学習: まだ学習していないカード
-        studyCards = AppState.cards.filter(card => {
-          const prog = AppState.progress[card.rowNumber];
-          return !prog || (prog.correctCount === 0 && prog.incorrectCount === 0);
-        });
-        break;
-      case 'all':
-        // 全体復習: 全カード
-        studyCards = [...AppState.cards];
-        break;
-    }
-    
-    if (studyCards.length === 0) {
-      alert('学習するカードがありません');
-      return;
-    }
-    
-    // シャッフル（設定に応じて）
-    if (AppState.settings.shuffleCards !== false) {
-      studyCards = this.shuffleArray(studyCards);
-    }
-    
-    // 学習状態を初期化
-    AppState.study.mode = mode;
-    AppState.study.cards = studyCards;
-    AppState.study.currentIndex = 0;
-    AppState.study.isFlipped = false;
-    AppState.study.sessionAnswers = {}; // セッション回答を初期化
-    
-    // 学習画面を表示
-    this.showScreen('study-screen');
-    this.renderCard();
-    this.updateStudyProgress();
-  },
-
-  /**
-   * 配列をシャッフル
-   */
-  shuffleArray: function(array) {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-  },
-
-  /**
-   * カードを表示
-   */
-  renderCard: function() {
-    // 読み上げ中なら停止
-    this.stopSpeech();
-    
-    const card = AppState.study.cards[AppState.study.currentIndex];
-    if (!card) return;
-    
-    console.log('Rendering card:', card);
-    
-    // フィールド情報を取得
-    const fields = AppState.fields;
-    
-    // 表面のコンテンツを生成
-    const frontFields = fields
-      .filter(f => f.displaySide === '表')
-      .sort((a, b) => (parseInt(a.displayOrder) || 99) - (parseInt(b.displayOrder) || 99));
-    
-    // 裏面のコンテンツを生成
-    const backFields = fields
-      .filter(f => f.displaySide === '裏')
-      .sort((a, b) => (parseInt(a.displayOrder) || 99) - (parseInt(b.displayOrder) || 99));
-    
-    // 表面を描画
-    const frontContent = document.getElementById('front-content');
-    frontContent.innerHTML = frontFields.map((field, index) => {
-      const value = card.fields[field.name] || '';
-      const isFirst = index === 0;
-      return '<div class="card-field">' +
-        '<div class="card-field-label">' + this.escapeHtml(field.name) + '</div>' +
-        '<div class="card-field-value' + (isFirst ? ' large' : '') + '">' + this.escapeHtml(value) + '</div>' +
-      '</div>';
-    }).join('');
-    
-    // 裏面を描画
-    const backContent = document.getElementById('back-content');
-    backContent.innerHTML = backFields.map((field, index) => {
-      const value = card.fields[field.name] || '';
-      const isFirst = index === 0;
-      return '<div class="card-field">' +
-        '<div class="card-field-label">' + this.escapeHtml(field.name) + '</div>' +
-        '<div class="card-field-value' + (isFirst ? ' large' : '') + '">' + this.escapeHtml(value) + '</div>' +
-      '</div>';
-    }).join('');
-    
-    // カードを表面にリセット
-    const flashcard = document.getElementById('flashcard');
-    flashcard.classList.remove('flipped');
-    AppState.study.isFlipped = false;
-    
-    // 回答ボタンを常に表示
-    document.getElementById('answer-buttons').style.display = 'flex';
-    
-    // お気に入り・合格状態を更新
-    this.updateCardButtons(card);
-    
-    // ナビゲーションボタンの状態を更新
-    this.updateNavButtons();
-    
-    // 次のカードを準備（後ろで待機）
-    this.prepareNextCard();
-  },
-
-  /**
-   * HTMLエスケープ
-   */
+// ============================================
+// ユーティリティ関数
+// ============================================
+const Utils = {
   escapeHtml: function(str) {
     if (str === null || str === undefined) return '';
     return String(str)
@@ -406,1082 +72,684 @@ const App = {
       .replace(/'/g, '&#39;');
   },
 
-  /**
-   * カードをめくる
-   */
-  flipCard: function() {
-    const flashcard = document.getElementById('flashcard');
-    
-    if (AppState.study.isFlipped) {
-      flashcard.classList.remove('flipped');
-      AppState.study.isFlipped = false;
-    } else {
-      flashcard.classList.add('flipped');
-      AppState.study.isFlipped = true;
+  shuffleArray: function(array) {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
-    // 回答ボタンは常に表示
+    return shuffled;
   },
 
-  /**
-   * 学習進捗を更新
-   */
-  updateStudyProgress: function() {
-    document.getElementById('study-current').textContent = AppState.study.currentIndex + 1;
-    document.getElementById('study-total').textContent = AppState.study.cards.length;
+  getTodayString: function() {
+    return new Date().toISOString().split('T')[0];
   },
 
-  /**
-   * カードのお気に入り・合格ボタンを更新
-   */
-  updateCardButtons: function(card) {
-    const prog = AppState.progress[card.rowNumber] || {};
-    
-    const btnFavorite = document.getElementById('btn-favorite');
-    const btnPassed = document.getElementById('btn-passed');
-    
-    // お気に入り
-    if (prog.favorite) {
-      btnFavorite.classList.add('active');
-      btnFavorite.querySelector('.material-icons').textContent = 'star';
-    } else {
-      btnFavorite.classList.remove('active');
-      btnFavorite.querySelector('.material-icons').textContent = 'star_border';
-    }
-    
-    // 合格
-    if (prog.passed) {
-      btnPassed.classList.add('passed');
-      btnPassed.querySelector('.material-icons').textContent = 'check_circle';
-    } else {
-      btnPassed.classList.remove('passed');
-      btnPassed.querySelector('.material-icons').textContent = 'check_circle_outline';
-    }
+  getDateAfterDays: function(days) {
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    return date.toISOString().split('T')[0];
   },
 
-  /**
-   * ナビゲーションボタンの状態を更新
-   */
-  updateNavButtons: function() {
-    const btnPrev = document.getElementById('btn-prev');
-    const btnNext = document.getElementById('btn-next');
-    
-    btnPrev.disabled = AppState.study.currentIndex === 0;
-    btnNext.disabled = AppState.study.currentIndex >= AppState.study.cards.length - 1;
+  getSettingNumber: function(key, defaultValue) {
+    const value = parseFloat(AppState.settings[key]);
+    return isNaN(value) ? defaultValue : value;
   },
 
-  /**
-   * 前のカードへ
-   */
-  prevCard: function() {
-    if (AppState.study.currentIndex > 0) {
-      this.slideToCard(AppState.study.currentIndex - 1, 'prev');
-    }
-  },
+  setElementText: function(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+};
 
-  /**
-   * 次のカードへ
-   */
-  nextCard: function() {
-    if (AppState.study.currentIndex < AppState.study.cards.length - 1) {
-      this.slideToCard(AppState.study.currentIndex + 1, 'next');
-    } else {
-      // 学習完了
-      this.finishStudy();
-    }
-  },
-
-  /**
-   * スライドアニメーションでカードを切り替え
-   */
-  slideToCard: function(newIndex, direction) {
-    const flashcard = document.getElementById('flashcard');
-    const flashcardInner = flashcard.querySelector('.flashcard-inner');
+// ============================================
+// 統計計算モジュール
+// ============================================
+const Stats = {
+  calculate: function() {
+    const cards = AppState.cards;
+    const progress = AppState.progress;
+    const today = Utils.getTodayString();
     
-    // 読み上げ中なら停止
-    this.stopSpeech();
+    let studied = 0, passed = 0, review = 0;
+    let totalCorrect = 0, totalIncorrect = 0;
     
-    // 次のカードの内容を事前に準備（後ろで待機）
-    this.renderNextCard(newIndex);
-    
-    // 現在のカードをスライドアウト
-    if (direction === 'next') {
-      flashcard.classList.add('slide-out-left');
-    } else {
-      flashcard.classList.add('slide-out-right');
+    for (const card of cards) {
+      const prog = progress[card.rowNumber];
+      if (!prog) continue;
+      
+      if (prog.correctCount > 0 || prog.incorrectCount > 0) studied++;
+      if (prog.passed) passed++;
+      if (prog.nextReviewDate && prog.nextReviewDate <= today && !prog.passed) review++;
+      totalCorrect += prog.correctCount || 0;
+      totalIncorrect += prog.incorrectCount || 0;
     }
     
-    // アニメーション完了後にカードを切り替え
-    setTimeout(() => {
-      // インデックスを更新
-      AppState.study.currentIndex = newIndex;
-      
-      // transitionを一時的に無効化してカードを即座にリセット
-      flashcard.style.transition = 'none';
-      flashcardInner.style.transition = 'none';
-      
-      flashcard.classList.remove('slide-out-left', 'slide-out-right');
-      flashcard.classList.remove('flipped');
-      AppState.study.isFlipped = false;
-      
-      // カードの内容を更新
-      this.updateCardContent();
-      
-      // 強制リフローで変更を適用
-      flashcard.offsetHeight;
-      
-      // transitionを再有効化
-      flashcard.style.transition = '';
-      flashcardInner.style.transition = '';
-      
-      // 次のカードを準備
-      this.prepareNextCard();
-      
-      this.updateStudyProgress();
-    }, 400); // スライドアウトの時間
+    const totalAnswers = totalCorrect + totalIncorrect;
+    const accuracy = totalAnswers > 0 ? Math.round((totalCorrect / totalAnswers) * 100) : 0;
+    
+    return { total: cards.length, studied, passed, review, totalCorrect, totalIncorrect, accuracy };
   },
 
-  /**
-   * 次のカードの内容を描画（後ろで待機させる）
-   */
-  renderNextCard: function(nextIndex) {
-    const nextCard = AppState.study.cards[nextIndex];
-    if (!nextCard) {
-      document.getElementById('flashcard-next').style.visibility = 'hidden';
+  updateHomeStats: function() {
+    const stats = this.calculate();
+    Utils.setElementText('stat-today', AppState.todayStudyCount);
+    Utils.setElementText('stat-total', stats.studied + ' / ' + stats.total);
+    Utils.setElementText('stat-passed', stats.passed);
+    Utils.setElementText('stat-review', stats.review);
+  }
+};
+
+// ============================================
+// 読み上げモジュール
+// ============================================
+const Speech = {
+  detectLanguage: function(fieldName, text) {
+    const lowerName = fieldName.toLowerCase();
+    if (lowerName.includes('英語') || lowerName.includes('english') || lowerName === 'en') return 'en-US';
+    if (lowerName.includes('日本語') || lowerName.includes('japanese') || lowerName === 'ja' || 
+        lowerName.includes('読み') || lowerName.includes('例文')) return 'ja-JP';
+    if (text && /[぀-ゟ゠-ヿ一-龯]/.test(text)) return 'ja-JP';
+    return 'en-US';
+  },
+
+  speak: function(text, lang, onEnd) {
+    if (!('speechSynthesis' in window)) { if (onEnd) onEnd(); return; }
+    
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang;
+    
+    const rateKey = lang === 'en-US' ? 'speechRateEn' : 'speechRateJa';
+    utterance.rate = Math.max(0.1, Math.min(10, Utils.getSettingNumber(rateKey, DEFAULT_SETTINGS[rateKey])));
+    
+    console.log('Speaking:', text, 'lang:', lang, 'rate:', utterance.rate);
+    App.setSpeakingState(true);
+    
+    utterance.onend = () => { if (onEnd) onEnd(); };
+    utterance.onerror = (e) => {
+      if (e.error !== 'interrupted') console.error('Speech error:', e);
+      App.setSpeakingState(false);
+      if (e.error !== 'interrupted' && onEnd) onEnd();
+    };
+    
+    window.speechSynthesis.speak(utterance);
+  },
+
+  speakSequence: function(items, index, onComplete) {
+    if (index >= items.length) {
+      App.setSpeakingState(false);
+      if (onComplete) onComplete();
       return;
     }
-    
-    document.getElementById('flashcard-next').style.visibility = 'visible';
-    
-    const fields = AppState.fields;
-    const frontFields = fields
-      .filter(f => f.displaySide === '表')
+    const item = items[index];
+    this.speak(item.text, item.lang, () => this.speakSequence(items, index + 1, onComplete));
+  },
+
+  stop: function() {
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    App.setSpeakingState(false);
+  }
+};
+
+// ============================================
+// カード描画モジュール
+// ============================================
+const CardRenderer = {
+  getFieldsBySide: function(side) {
+    return AppState.fields
+      .filter(f => f.displaySide === side)
       .sort((a, b) => (parseInt(a.displayOrder) || 99) - (parseInt(b.displayOrder) || 99));
-    
-    const nextFrontContent = document.getElementById('next-front-content');
-    nextFrontContent.innerHTML = frontFields.map((field, index) => {
-      const value = nextCard.fields[field.name] || '';
+  },
+
+  renderFields: function(card, fields) {
+    return fields.map((field, index) => {
+      const value = card.fields[field.name] || '';
       const isFirst = index === 0;
-      return '<div class="card-field">' +
-        '<div class="card-field-label">' + this.escapeHtml(field.name) + '</div>' +
-        '<div class="card-field-value' + (isFirst ? ' large' : '') + '">' + this.escapeHtml(value) + '</div>' +
-      '</div>';
+      return '<div class="card-field"><div class="card-field-label">' + Utils.escapeHtml(field.name) + 
+        '</div><div class="card-field-value' + (isFirst ? ' large' : '') + '">' + Utils.escapeHtml(value) + '</div></div>';
     }).join('');
   },
 
-  /**
-   * 次のカードを準備
-   */
-  prepareNextCard: function() {
-    const nextIndex = AppState.study.currentIndex + 1;
-    if (nextIndex < AppState.study.cards.length) {
-      this.renderNextCard(nextIndex);
-    } else {
-      document.getElementById('flashcard-next').style.visibility = 'hidden';
+  render: function(card) {
+    if (!card) return;
+    document.getElementById('front-content').innerHTML = this.renderFields(card, this.getFieldsBySide('表'));
+    document.getElementById('back-content').innerHTML = this.renderFields(card, this.getFieldsBySide('裏'));
+  },
+
+  renderNext: function(nextCard) {
+    const nextEl = document.getElementById('flashcard-next');
+    if (!nextCard) { nextEl.style.visibility = 'hidden'; return; }
+    nextEl.style.visibility = 'visible';
+    document.getElementById('next-front-content').innerHTML = this.renderFields(nextCard, this.getFieldsBySide('表'));
+  }
+};
+
+// ============================================
+// アプリケーションメイン
+// ============================================
+const App = {
+  init: function() {
+    console.log('App initializing...');
+    this.loadInitialData();
+  },
+
+  loadInitialData: function() {
+    this.showScreen('loading-screen');
+    google.script.run
+      .withSuccessHandler(this.onDataLoaded.bind(this))
+      .withFailureHandler(this.onDataError.bind(this))
+      .getInitialData();
+  },
+
+  onDataLoaded: function(data) {
+    try {
+      AppState.fields = data.fields || [];
+      AppState.cards = data.cards || [];
+      AppState.progress = data.progress || {};
+      AppState.settings = data.settings || {};
+      AppState.decks = data.decks || { tree: {}, list: [] };
+      AppState.isLoading = false;
+      
+      Stats.updateHomeStats();
+      this.updateDebugInfo();
+      this.showScreen('home-screen');
+    } catch (error) {
+      console.error('Error in onDataLoaded:', error);
     }
   },
 
-  /**
-   * カードの内容のみを更新（アニメーションなし）
-   */
-  updateCardContent: function() {
+  onDataError: function(error) {
+    console.error('Data load error:', error);
+    AppState.error = error;
+    AppState.isLoading = false;
+    document.getElementById('error-message').textContent = error.message || 'データの読み込みに失敗しました';
+    this.showScreen('error-screen');
+  },
+
+  retry: function() { this.loadInitialData(); },
+
+  showScreen: function(screenId) {
+    document.querySelectorAll('.screen').forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
+    const target = document.getElementById(screenId);
+    if (target) {
+      target.classList.add('active');
+      target.style.display = screenId === 'loading-screen' ? 'flex' : 'block';
+    }
+  },
+
+  updateDebugInfo: function() {
+    Utils.setElementText('debug-connection', '✓ 接続成功');
+    const conn = document.getElementById('debug-connection');
+    if (conn) conn.style.color = 'green';
+    Utils.setElementText('debug-card-count', AppState.cards.length);
+    Utils.setElementText('debug-field-count', AppState.fields.length);
+    Utils.setElementText('debug-deck-count', AppState.decks.list.length);
+  },
+
+  showRawData: function() {
+    const el = document.getElementById('debug-raw-data');
+    if (el.classList.contains('show')) { el.classList.remove('show'); }
+    else {
+      el.textContent = JSON.stringify({ fields: AppState.fields, cards: AppState.cards, progress: AppState.progress, settings: AppState.settings, decks: AppState.decks }, null, 2);
+      el.classList.add('show');
+    }
+  },
+
+  // 学習開始
+  startStudy: function(mode) {
+    const today = Utils.getTodayString();
+    let cards = [];
+    
+    if (mode === 'review') {
+      cards = AppState.cards.filter(c => {
+        const p = AppState.progress[c.rowNumber];
+        return p && p.nextReviewDate && p.nextReviewDate <= today && !p.passed;
+      });
+    } else if (mode === 'new') {
+      cards = AppState.cards.filter(c => {
+        const p = AppState.progress[c.rowNumber];
+        return !p || (p.correctCount === 0 && p.incorrectCount === 0);
+      });
+    } else {
+      cards = [...AppState.cards];
+    }
+    
+    if (cards.length === 0) { alert('学習するカードがありません'); return; }
+    if (AppState.settings.shuffleCards !== false) cards = Utils.shuffleArray(cards);
+    this.initStudySession(mode, cards);
+  },
+
+  startFilteredStudy: function() {
+    const shuffle = document.getElementById('setting-shuffle').checked;
+    let cards = this.getFilteredCards();
+    if (cards.length === 0) { alert('条件に一致するカードがありません'); return; }
+    if (shuffle) cards = Utils.shuffleArray(cards);
+    this.initStudySession('filtered', cards);
+  },
+
+  initStudySession: function(mode, cards) {
+    AppState.study = { mode, cards, currentIndex: 0, isFlipped: false, sessionAnswers: {}, isSpeaking: false, isAutoPlay: false, isRepeat: false };
+    this.showScreen('study-screen');
+    this.renderCard();
+    this.updateStudyProgress();
+  },
+
+  // カード表示
+  renderCard: function() {
+    Speech.stop();
     const card = AppState.study.cards[AppState.study.currentIndex];
     if (!card) return;
     
-    const fields = AppState.fields;
-    const frontFields = fields
-      .filter(f => f.displaySide === '表')
-      .sort((a, b) => (parseInt(a.displayOrder) || 99) - (parseInt(b.displayOrder) || 99));
-    const backFields = fields
-      .filter(f => f.displaySide === '裏')
-      .sort((a, b) => (parseInt(a.displayOrder) || 99) - (parseInt(b.displayOrder) || 99));
-    
-    const frontContent = document.getElementById('front-content');
-    frontContent.innerHTML = frontFields.map((field, index) => {
-      const value = card.fields[field.name] || '';
-      const isFirst = index === 0;
-      return '<div class="card-field">' +
-        '<div class="card-field-label">' + this.escapeHtml(field.name) + '</div>' +
-        '<div class="card-field-value' + (isFirst ? ' large' : '') + '">' + this.escapeHtml(value) + '</div>' +
-      '</div>';
-    }).join('');
-    
-    const backContent = document.getElementById('back-content');
-    backContent.innerHTML = backFields.map((field, index) => {
-      const value = card.fields[field.name] || '';
-      const isFirst = index === 0;
-      return '<div class="card-field">' +
-        '<div class="card-field-label">' + this.escapeHtml(field.name) + '</div>' +
-        '<div class="card-field-value' + (isFirst ? ' large' : '') + '">' + this.escapeHtml(value) + '</div>' +
-      '</div>';
-    }).join('');
-    
+    CardRenderer.render(card);
+    const flashcard = document.getElementById('flashcard');
+    flashcard.classList.remove('flipped');
+    AppState.study.isFlipped = false;
+    document.getElementById('answer-buttons').style.display = 'flex';
+    this.updateCardButtons(card);
+    this.updateNavButtons();
+    this.prepareNextCard();
+  },
+
+  updateCardContent: function() {
+    const card = AppState.study.cards[AppState.study.currentIndex];
+    if (!card) return;
+    CardRenderer.render(card);
     document.getElementById('answer-buttons').style.display = 'flex';
     this.updateCardButtons(card);
     this.updateNavButtons();
   },
 
-  /**
-   * 回答を記録
-   */
-  answerCard: function(isCorrect) {
-    console.log('Answer:', isCorrect ? 'Correct' : 'Incorrect');
-    
-    const card = AppState.study.cards[AppState.study.currentIndex];
-    const rowNumber = card.rowNumber;
-    
-    // 進捗データを取得または初期化
-    let prog = AppState.progress[rowNumber] || {
-      correctCount: 0,
-      incorrectCount: 0,
-      streak: 0,
-      nextReviewDate: null,
-      favorite: false,
-      passed: false
-    };
-    
-    // 前回の回答を取得（このセッション内での回答）
-    const previousAnswer = AppState.study.sessionAnswers[rowNumber];
-    
-    // 前回回答済みの場合、まず前回の回答を取り消す
-    if (previousAnswer !== undefined && previousAnswer !== null) {
-      if (previousAnswer === 'correct') {
-        prog.correctCount = Math.max(0, prog.correctCount - 1);
-        prog.streak = Math.max(0, prog.streak - 1);
-      } else if (previousAnswer === 'incorrect') {
-        prog.incorrectCount = Math.max(0, prog.incorrectCount - 1);
-        // 不正解後の連続は0になっていたので、復元は複雑
-        // ここでは単純に不正解数を減らすのみ
-      }
-      console.log('Previous answer cancelled:', previousAnswer);
-    }
-    
-    // 新しい回答を記録
-    if (isCorrect) {
-      prog.correctCount++;
-      prog.streak++;
-    } else {
-      prog.incorrectCount++;
-      prog.streak = 0; // 不正解で連続リセット
-    }
-    
-    // セッション回答を記録
-    AppState.study.sessionAnswers[rowNumber] = isCorrect ? 'correct' : 'incorrect';
-    
-    // 次回復習日を計算（スペースドリピティション）
-    prog.nextReviewDate = this.calculateNextReviewDate(prog.streak);
-    
-    // AppStateを更新
-    AppState.progress[rowNumber] = prog;
-    
-    // サーバーに保存
-    this.saveProgressToServer(rowNumber, prog);
-    
-    // 視覚的フィードバック
+  prepareNextCard: function() {
+    const next = AppState.study.currentIndex + 1;
+    CardRenderer.renderNext(next < AppState.study.cards.length ? AppState.study.cards[next] : null);
+  },
+
+  flipCard: function() {
+    AppState.study.isFlipped = !AppState.study.isFlipped;
+    document.getElementById('flashcard').classList.toggle('flipped', AppState.study.isFlipped);
+  },
+
+  updateStudyProgress: function() {
+    Utils.setElementText('study-current', AppState.study.currentIndex + 1);
+    Utils.setElementText('study-total', AppState.study.cards.length);
+  },
+
+  updateCardButtons: function(card) {
+    const prog = AppState.progress[card.rowNumber] || {};
+    const fav = document.getElementById('btn-favorite');
+    const pass = document.getElementById('btn-passed');
+    fav.classList.toggle('active', prog.favorite);
+    fav.querySelector('.material-icons').textContent = prog.favorite ? 'star' : 'star_border';
+    pass.classList.toggle('passed', prog.passed);
+    pass.querySelector('.material-icons').textContent = prog.passed ? 'check_circle' : 'check_circle_outline';
+  },
+
+  updateNavButtons: function() {
+    document.getElementById('btn-prev').disabled = AppState.study.currentIndex === 0;
+    document.getElementById('btn-next').disabled = AppState.study.currentIndex >= AppState.study.cards.length - 1;
+  },
+
+  prevCard: function() { if (AppState.study.currentIndex > 0) this.slideToCard(AppState.study.currentIndex - 1, 'prev'); },
+  
+  nextCard: function() {
+    if (AppState.study.currentIndex < AppState.study.cards.length - 1) this.slideToCard(AppState.study.currentIndex + 1, 'next');
+    else this.finishStudy();
+  },
+
+  slideToCard: function(newIndex, direction) {
     const flashcard = document.getElementById('flashcard');
-    const animClass = isCorrect ? 'answer-correct' : 'answer-incorrect';
-    flashcard.classList.add(animClass);
+    const inner = flashcard.querySelector('.flashcard-inner');
     
-    // アニメーション終了後に次のカードへ
+    Speech.stop();
+    CardRenderer.renderNext(AppState.study.cards[newIndex]);
+    flashcard.classList.add(direction === 'next' ? 'slide-out-left' : 'slide-out-right');
+    
     setTimeout(() => {
-      flashcard.classList.remove(animClass);
-      if (AppState.study.currentIndex < AppState.study.cards.length - 1) {
-        this.slideToCard(AppState.study.currentIndex + 1, 'next');
-      } else {
-        this.finishStudy();
-      }
-    }, 500);
+      AppState.study.currentIndex = newIndex;
+      flashcard.style.transition = 'none';
+      inner.style.transition = 'none';
+      flashcard.classList.remove('slide-out-left', 'slide-out-right', 'flipped');
+      AppState.study.isFlipped = false;
+      this.updateCardContent();
+      flashcard.offsetHeight;
+      flashcard.style.transition = '';
+      inner.style.transition = '';
+      this.prepareNextCard();
+      this.updateStudyProgress();
+    }, ANIMATION_DURATION.SLIDE);
   },
 
-  /**
-   * 次回復習日を計算（スペースドリピティション）
-   */
-  calculateNextReviewDate: function(streak) {
-    const settings = AppState.settings;
-    let interval = 1;
+  // 回答処理
+  answerCard: function(isCorrect) {
+    const card = AppState.study.cards[AppState.study.currentIndex];
+    const row = card.rowNumber;
+    let prog = AppState.progress[row] || { correctCount: 0, incorrectCount: 0, streak: 0, nextReviewDate: null, favorite: false, passed: false };
     
-    if (streak >= 5) {
-      interval = settings.interval_5 || 30;
-    } else if (streak >= 4) {
-      interval = settings.interval_4 || 14;
-    } else if (streak >= 3) {
-      interval = settings.interval_3 || 7;
-    } else if (streak >= 2) {
-      interval = settings.interval_2 || 3;
-    } else if (streak >= 1) {
-      interval = settings.interval_1 || 1;
+    const prev = AppState.study.sessionAnswers[row];
+    if (prev) {
+      if (prev === 'correct') { prog.correctCount = Math.max(0, prog.correctCount - 1); prog.streak = Math.max(0, prog.streak - 1); }
+      else { prog.incorrectCount = Math.max(0, prog.incorrectCount - 1); }
     }
     
-    const nextDate = new Date();
-    nextDate.setDate(nextDate.getDate() + interval);
+    if (isCorrect) { prog.correctCount++; prog.streak++; }
+    else { prog.incorrectCount++; prog.streak = 0; }
     
-    return nextDate.toISOString().split('T')[0];
+    // 新規回答の場合のみ今日の学習数をカウント
+    if (!prev) {
+      AppState.todayStudyCount++;
+    }
+    AppState.study.sessionAnswers[row] = isCorrect ? 'correct' : 'incorrect';
+    prog.nextReviewDate = this.calculateNextReviewDate(prog.streak);
+    AppState.progress[row] = prog;
+    this.saveProgressToServer(row, prog);
+    
+    const flashcard = document.getElementById('flashcard');
+    const anim = isCorrect ? 'answer-correct' : 'answer-incorrect';
+    flashcard.classList.add(anim);
+    
+    setTimeout(() => {
+      flashcard.classList.remove(anim);
+      if (AppState.study.currentIndex < AppState.study.cards.length - 1) this.slideToCard(AppState.study.currentIndex + 1, 'next');
+      else this.finishStudy();
+    }, ANIMATION_DURATION.FEEDBACK);
   },
 
-  /**
-   * 進捗をサーバーに保存
-   */
-  saveProgressToServer: function(rowNumber, progressData) {
-    google.script.run
-      .withSuccessHandler((result) => {
-        console.log('Progress saved:', result);
-      })
-      .withFailureHandler((error) => {
-        console.error('Failed to save progress:', error);
-      })
-      .saveProgress(rowNumber, progressData);
+  calculateNextReviewDate: function(streak) {
+    const intervals = [[5, 'interval_5'], [4, 'interval_4'], [3, 'interval_3'], [2, 'interval_2'], [1, 'interval_1']];
+    for (const [min, key] of intervals) {
+      if (streak >= min) return Utils.getDateAfterDays(Utils.getSettingNumber(key, DEFAULT_SETTINGS[key]));
+    }
+    return Utils.getDateAfterDays(1);
   },
 
-  /**
-   * お気に入り切替え
-   */
+  saveProgressToServer: function(row, data) {
+    google.script.run.withSuccessHandler(() => console.log('Progress saved')).withFailureHandler(e => console.error('Failed:', e)).saveProgress(row, data);
+  },
+
   toggleFavorite: function() {
     const card = AppState.study.cards[AppState.study.currentIndex];
-    const rowNumber = card.rowNumber;
-    
-    // 進捗データを取得または初期化
-    let prog = AppState.progress[rowNumber] || {
-      correctCount: 0,
-      incorrectCount: 0,
-      streak: 0,
-      nextReviewDate: null,
-      favorite: false,
-      passed: false
-    };
-    
+    let prog = AppState.progress[card.rowNumber] || { correctCount: 0, incorrectCount: 0, streak: 0, nextReviewDate: null, favorite: false, passed: false };
     prog.favorite = !prog.favorite;
-    AppState.progress[rowNumber] = prog;
+    AppState.progress[card.rowNumber] = prog;
     this.updateCardButtons(card);
-    console.log('Favorite toggled:', prog.favorite);
-    
-    // サーバーに保存
-    this.saveProgressToServer(rowNumber, prog);
+    this.saveProgressToServer(card.rowNumber, prog);
   },
 
-  /**
-   * 合格切替え
-   */
   togglePassed: function() {
     const card = AppState.study.cards[AppState.study.currentIndex];
-    const rowNumber = card.rowNumber;
-    
-    // 進捗データを取得または初期化
-    let prog = AppState.progress[rowNumber] || {
-      correctCount: 0,
-      incorrectCount: 0,
-      streak: 0,
-      nextReviewDate: null,
-      favorite: false,
-      passed: false
-    };
-    
+    let prog = AppState.progress[card.rowNumber] || { correctCount: 0, incorrectCount: 0, streak: 0, nextReviewDate: null, favorite: false, passed: false };
     prog.passed = !prog.passed;
-    AppState.progress[rowNumber] = prog;
+    AppState.progress[card.rowNumber] = prog;
     this.updateCardButtons(card);
-    console.log('Passed toggled:', prog.passed);
-    
-    // サーバーに保存
-    this.saveProgressToServer(rowNumber, prog);
+    this.saveProgressToServer(card.rowNumber, prog);
   },
 
-  /**
-   * 学習終了
-   */
-  finishStudy: function() {
-    alert('学習完了！');
-    this.exitStudy();
-  },
+  finishStudy: function() { alert('学習完了！'); this.exitStudy(); },
 
-  /**
-   * 学習を終了してホームに戻る
-   */
   exitStudy: function() {
-    // 読み上げを停止
-    this.stopSpeech();
-    
-    AppState.study.mode = null;
-    AppState.study.cards = [];
-    AppState.study.currentIndex = 0;
-    AppState.study.isFlipped = false;
-    AppState.study.sessionAnswers = {};
-    AppState.study.isSpeaking = false;
-    AppState.study.isAutoPlay = false;
-    AppState.study.isRepeat = false;
-    
-    this.updateStats();
+    Speech.stop();
+    AppState.study = { mode: null, cards: [], currentIndex: 0, isFlipped: false, sessionAnswers: {}, isSpeaking: false, isAutoPlay: false, isRepeat: false };
+    Stats.updateHomeStats();
     this.showScreen('home-screen');
   },
 
-  /**
-   * デッキ選択画面を表示
-   */
-  showDeckSelect: function() {
-    this.renderDeckTree();
-    this.updateSelectedDeckInfo();
-    this.showScreen('deck-screen');
-  },
+  // デッキ選択
+  showDeckSelect: function() { this.renderDeckTree(); this.updateSelectedDeckInfo(); this.showScreen('deck-screen'); },
+  closeDeckSelect: function() { this.showScreen('home-screen'); },
 
-  /**
-   * デッキ選択画面を閉じる
-   */
-  closeDeckSelect: function() {
-    this.showScreen('home-screen');
-  },
-
-  /**
-   * デッキツリーを描画
-   */
   renderDeckTree: function() {
     const container = document.getElementById('deck-tree');
-    const decks = AppState.decks;
-    
-    let html = '';
-    
-    // 「すべてのデッキ」オプション
-    const allSelected = AppState.selectedDeck === null;
-    html += '<div class="deck-item deck-all-item' + (allSelected ? ' selected' : '') + '" onclick="App.selectDeck(null)">';
-    html += '<span class="material-icons">folder_special</span>';
-    html += '<span class="deck-item-name">すべてのデッキ</span>';
-    html += '<span class="deck-item-count">' + AppState.cards.length + '枚</span>';
-    html += '</div>';
-    
-    // デッキツリーを再帰的に描画
-    html += this.renderDeckTreeNode(decks.tree, '');
-    
+    const allSel = AppState.selectedDeck === null;
+    let html = '<div class="deck-item deck-all-item' + (allSel ? ' selected' : '') + '" onclick="App.selectDeck(null)">' +
+      '<span class="material-icons">folder_special</span><span class="deck-item-name">すべてのデッキ</span>' +
+      '<span class="deck-item-count">' + AppState.cards.length + '枚</span></div>';
+    html += this.renderDeckTreeNode(AppState.decks.tree, '');
     container.innerHTML = html;
   },
 
-  /**
-   * デッキツリーノードを再帰的に描画
-   */
   renderDeckTreeNode: function(node, parentPath) {
     let html = '';
-    
     for (const key in node) {
       if (key === '_path' || key === '_children') continue;
-      
-      const deckData = node[key];
       const path = parentPath ? parentPath + '/' + key : key;
-      const children = deckData._children || {};
-      const hasChildren = Object.keys(children).filter(k => k !== '_path' && k !== '_children').length > 0;
-      const cardCount = this.getCardCountForDeck(path);
-      const isSelected = AppState.selectedDeck === path;
+      const children = node[key]._children || {};
+      const childKeys = Object.keys(children).filter(k => k !== '_path' && k !== '_children');
+      const hasChildren = childKeys.length > 0;
+      const count = this.getCardCountForDeck(path);
+      const sel = AppState.selectedDeck === path;
       
-      html += '<div class="deck-node">';
-      html += '<div class="deck-item' + (isSelected ? ' selected' : '') + '" onclick="App.selectDeck(\'' + this.escapeHtml(path) + '\')">';
-      
-      if (hasChildren) {
-        html += '<button class="deck-toggle" onclick="event.stopPropagation(); App.toggleDeckNode(this)">';
-        html += '<span class="material-icons">chevron_right</span>';
-        html += '</button>';
-      } else {
-        html += '<span style="width: 28px; display: inline-block;"></span>';
-      }
-      
-      html += '<span class="material-icons">folder</span>';
-      html += '<span class="deck-item-name">' + this.escapeHtml(key) + '</span>';
-      html += '<span class="deck-item-count">' + cardCount + '枚</span>';
-      html += '</div>';
-      
-      if (hasChildren) {
-        html += '<div class="deck-children" style="display: none;">';
-        html += this.renderDeckTreeNode(children, path);
-        html += '</div>';
-      }
-      
+      html += '<div class="deck-node"><div class="deck-item' + (sel ? ' selected' : '') + '" onclick="App.selectDeck(\'' + Utils.escapeHtml(path) + '\')">';
+      if (hasChildren) html += '<button class="deck-toggle" onclick="event.stopPropagation(); App.toggleDeckNode(this)"><span class="material-icons">chevron_right</span></button>';
+      else html += '<span style="width: 28px; display: inline-block;"></span>';
+      html += '<span class="material-icons">folder</span><span class="deck-item-name">' + Utils.escapeHtml(key) + '</span><span class="deck-item-count">' + count + '枚</span></div>';
+      if (hasChildren) html += '<div class="deck-children" style="display: none;">' + this.renderDeckTreeNode(children, path) + '</div>';
       html += '</div>';
     }
-    
     return html;
   },
 
-  /**
-   * デッキに含まれるカード数を取得
-   */
-  getCardCountForDeck: function(deckPath) {
-    return AppState.cards.filter(card => {
-      const cardDeck = card.fields['デッキ'] || '';
-      // 完全一致または子デッキ
-      return cardDeck === deckPath || cardDeck.startsWith(deckPath + '/');
-    }).length;
+  getCardCountForDeck: function(path) {
+    return AppState.cards.filter(c => { const d = c.fields['デッキ'] || ''; return d === path || d.startsWith(path + '/'); }).length;
   },
 
-  /**
-   * デッキノードの展開/折りたたみ
-   */
-  toggleDeckNode: function(button) {
-    const deckNode = button.closest('.deck-node');
-    const children = deckNode.querySelector('.deck-children');
-    
-    if (children) {
-      const isHidden = children.style.display === 'none';
-      children.style.display = isHidden ? 'block' : 'none';
-      button.classList.toggle('expanded', isHidden);
-    }
+  toggleDeckNode: function(btn) {
+    const node = btn.closest('.deck-node');
+    const children = node.querySelector('.deck-children');
+    if (children) { const hidden = children.style.display === 'none'; children.style.display = hidden ? 'block' : 'none'; btn.classList.toggle('expanded', hidden); }
   },
 
-  /**
-   * デッキを選択
-   */
-  selectDeck: function(deckPath) {
-    AppState.selectedDeck = deckPath;
-    this.renderDeckTree();
-    this.updateSelectedDeckInfo();
-  },
+  selectDeck: function(path) { AppState.selectedDeck = path; this.renderDeckTree(); this.updateSelectedDeckInfo(); },
 
-  /**
-   * 選択中のデッキ情報を更新
-   */
   updateSelectedDeckInfo: function() {
-    const nameEl = document.getElementById('selected-deck-name');
-    const countEl = document.getElementById('selected-deck-count');
-    
-    if (AppState.selectedDeck === null) {
-      nameEl.textContent = 'すべてのデッキ';
-      countEl.textContent = AppState.cards.length + '枚';
-    } else {
-      nameEl.textContent = AppState.selectedDeck;
-      countEl.textContent = this.getCardCountForDeck(AppState.selectedDeck) + '枚';
-    }
+    const name = document.getElementById('selected-deck-name');
+    const count = document.getElementById('selected-deck-count');
+    if (AppState.selectedDeck === null) { name.textContent = 'すべてのデッキ'; count.textContent = AppState.cards.length + '枚'; }
+    else { name.textContent = AppState.selectedDeck; count.textContent = this.getCardCountForDeck(AppState.selectedDeck) + '枚'; }
   },
 
-  /**
-   * 学習設定画面を表示
-   */
+  // 学習設定
   showStudySettings: function() {
-    // 設定画面のデッキ名を更新
-    const deckName = AppState.selectedDeck || 'すべてのデッキ';
-    document.getElementById('settings-deck-name').textContent = deckName;
-    
-    // 入力欄をリセット
+    document.getElementById('settings-deck-name').textContent = AppState.selectedDeck || 'すべてのデッキ';
     document.getElementById('word-start').value = '';
     document.getElementById('word-count').value = '';
     document.getElementById('filter-favorite').checked = false;
     document.getElementById('filter-not-passed').checked = false;
     document.getElementById('setting-shuffle').checked = true;
     document.querySelector('input[name="studyMode"][value="all"]').checked = true;
-    
-    // イベントリスナーを設定
     this.setupStudySettingsListeners();
-    
-    // プレビューを更新
     this.updateFilteredCardCount();
-    
     this.showScreen('study-settings-screen');
   },
 
-  /**
-   * 学習設定画面のイベントリスナーを設定
-   */
   setupStudySettingsListeners: function() {
-    const self = this;
-    const inputs = [
-      'word-start', 'word-count', 'filter-favorite', 
-      'filter-not-passed', 'setting-shuffle'
-    ];
-    
-    inputs.forEach(id => {
+    const handler = this.updateFilteredCardCount.bind(this);
+    ['word-start', 'word-count', 'filter-favorite', 'filter-not-passed', 'setting-shuffle'].forEach(id => {
       const el = document.getElementById(id);
-      el.removeEventListener('change', self.updateFilteredCardCount.bind(self));
-      el.addEventListener('change', self.updateFilteredCardCount.bind(self));
-      if (el.type === 'number') {
-        el.removeEventListener('input', self.updateFilteredCardCount.bind(self));
-        el.addEventListener('input', self.updateFilteredCardCount.bind(self));
-      }
+      el.removeEventListener('change', handler); el.addEventListener('change', handler);
+      if (el.type === 'number') { el.removeEventListener('input', handler); el.addEventListener('input', handler); }
     });
-    
-    // ラジオボタン
-    document.querySelectorAll('input[name="studyMode"]').forEach(radio => {
-      radio.removeEventListener('change', self.updateFilteredCardCount.bind(self));
-      radio.addEventListener('change', self.updateFilteredCardCount.bind(self));
-    });
+    document.querySelectorAll('input[name="studyMode"]').forEach(r => { r.removeEventListener('change', handler); r.addEventListener('change', handler); });
   },
 
-  /**
-   * 絞り込み結果のカード数を更新
-   */
-  updateFilteredCardCount: function() {
-    const cards = this.getFilteredCards();
-    document.getElementById('filtered-card-count').textContent = cards.length;
-  },
+  updateFilteredCardCount: function() { document.getElementById('filtered-card-count').textContent = this.getFilteredCards().length; },
 
-  /**
-   * 現在の設定でフィルターされたカードを取得
-   */
   getFilteredCards: function() {
     const mode = document.querySelector('input[name="studyMode"]:checked').value;
-    const wordStart = parseInt(document.getElementById('word-start').value) || null;
-    const wordCount = parseInt(document.getElementById('word-count').value) || null;
-    const filterFavorite = document.getElementById('filter-favorite').checked;
-    const filterNotPassed = document.getElementById('filter-not-passed').checked;
-    
-    const today = new Date().toISOString().split('T')[0];
+    const start = parseInt(document.getElementById('word-start').value) || null;
+    const count = parseInt(document.getElementById('word-count').value) || null;
+    const fav = document.getElementById('filter-favorite').checked;
+    const notPass = document.getElementById('filter-not-passed').checked;
+    const today = Utils.getTodayString();
     
     let cards = [...AppState.cards];
-    
-    // デッキフィルター
-    if (AppState.selectedDeck !== null) {
-      cards = cards.filter(card => {
-        const cardDeck = card.fields['デッキ'] || '';
-        return cardDeck === AppState.selectedDeck || cardDeck.startsWith(AppState.selectedDeck + '/');
-      });
-    }
-    
-    // 単語番号でソート（行番号順）
+    if (AppState.selectedDeck !== null) cards = cards.filter(c => { const d = c.fields['デッキ'] || ''; return d === AppState.selectedDeck || d.startsWith(AppState.selectedDeck + '/'); });
     cards.sort((a, b) => a.rowNumber - b.rowNumber);
     
-    // 単語番号フィルター（単語番号1 = 行番号5）
-    // wordStart: 開始単語番号（1から始まる）
-    // wordCount: 学習する単語数
-    if (wordStart !== null && wordStart >= 1) {
-      // 開始単語番号のインデックスを計算（0始まり）
-      const startIndex = wordStart - 1;
-      
-      if (wordCount !== null && wordCount >= 1) {
-        // 開始位置から指定数だけ取得
-        cards = cards.slice(startIndex, startIndex + wordCount);
-      } else {
-        // 開始位置から最後まで
-        cards = cards.slice(startIndex);
-      }
-    } else if (wordCount !== null && wordCount >= 1) {
-      // 開始位置未指定で数だけ指定：最初から指定数
-      cards = cards.slice(0, wordCount);
-    }
+    if (start !== null && start >= 1) { const idx = start - 1; cards = count !== null && count >= 1 ? cards.slice(idx, idx + count) : cards.slice(idx); }
+    else if (count !== null && count >= 1) cards = cards.slice(0, count);
     
-    // 学習モードフィルター
-    if (mode === 'review') {
-      cards = cards.filter(card => {
-        const prog = AppState.progress[card.rowNumber];
-        if (!prog) return false;
-        return prog.nextReviewDate && prog.nextReviewDate <= today && !prog.passed;
-      });
-    } else if (mode === 'new') {
-      cards = cards.filter(card => {
-        const prog = AppState.progress[card.rowNumber];
-        return !prog || (prog.correctCount === 0 && prog.incorrectCount === 0);
-      });
-    }
+    if (mode === 'review') cards = cards.filter(c => { const p = AppState.progress[c.rowNumber]; return p && p.nextReviewDate && p.nextReviewDate <= today && !p.passed; });
+    else if (mode === 'new') cards = cards.filter(c => { const p = AppState.progress[c.rowNumber]; return !p || (p.correctCount === 0 && p.incorrectCount === 0); });
     
-    // お気に入りフィルター
-    if (filterFavorite) {
-      cards = cards.filter(card => {
-        const prog = AppState.progress[card.rowNumber];
-        return prog && prog.favorite;
-      });
-    }
-    
-    // 未合格フィルター
-    if (filterNotPassed) {
-      cards = cards.filter(card => {
-        const prog = AppState.progress[card.rowNumber];
-        return !prog || !prog.passed;
-      });
-    }
+    if (fav) cards = cards.filter(c => { const p = AppState.progress[c.rowNumber]; return p && p.favorite; });
+    if (notPass) cards = cards.filter(c => { const p = AppState.progress[c.rowNumber]; return !p || !p.passed; });
     
     return cards;
   },
 
-  /**
-   * 学習設定画面を閉じる
-   */
-  closeStudySettings: function() {
-    this.showScreen('deck-screen');
-  },
+  closeStudySettings: function() { this.showScreen('deck-screen'); },
 
-  /**
-   * 絞り込みで学習開始
-   */
-  startFilteredStudy: function() {
-    const shuffle = document.getElementById('setting-shuffle').checked;
-    let studyCards = this.getFilteredCards();
-    
-    if (studyCards.length === 0) {
-      alert('条件に一致するカードがありません');
-      return;
-    }
-    
-    // シャッフル
-    if (shuffle) {
-      studyCards = this.shuffleArray(studyCards);
-    }
-    
-    // 学習状態を初期化
-    AppState.study.mode = 'filtered';
-    AppState.study.cards = studyCards;
-    AppState.study.currentIndex = 0;
-    AppState.study.isFlipped = false;
-    AppState.study.sessionAnswers = {}; // セッション回答を初期化
-    
-    // 学習画面を表示
-    this.showScreen('study-screen');
-    this.renderCard();
-    this.updateStudyProgress();
-  },
-
-  // ============================================
-  // 読み上げ機能（ステップ6-7）
-  // ============================================
-
-  /**
-   * 連続再生モードを切替え
-   */
+  // 連続再生
   toggleAutoPlay: function() {
     AppState.study.isAutoPlay = !AppState.study.isAutoPlay;
     this.updateAutoPlayButton();
-    
-    if (AppState.study.isAutoPlay) {
-      // 連続再生開始
-      this.startAutoPlay();
-    } else {
-      // 連続再生停止
-      this.stopSpeech();
-    }
+    if (AppState.study.isAutoPlay) this.startAutoPlay(); else Speech.stop();
   },
 
-  /**
-   * リピートモードを切替え
-   */
-  toggleRepeat: function() {
-    AppState.study.isRepeat = !AppState.study.isRepeat;
-    this.updateRepeatButton();
-  },
+  toggleRepeat: function() { AppState.study.isRepeat = !AppState.study.isRepeat; this.updateRepeatButton(); },
 
-  /**連続再生ボタンの表示を更新
-   */
   updateAutoPlayButton: function() {
     const btn = document.getElementById('btn-autoplay');
-    if (btn) {
-      if (AppState.study.isAutoPlay) {
-        btn.classList.add('autoplay-active');
-        btn.querySelector('.material-icons').textContent = 'pause_circle';
-      } else {
-        btn.classList.remove('autoplay-active');
-        btn.querySelector('.material-icons').textContent = 'play_circle';
-      }
-    }
+    if (btn) { btn.classList.toggle('autoplay-active', AppState.study.isAutoPlay); btn.querySelector('.material-icons').textContent = AppState.study.isAutoPlay ? 'pause_circle' : 'play_circle'; }
   },
 
-  /**
-   * リピートボタンの表示を更新
-   */
   updateRepeatButton: function() {
     const btn = document.getElementById('btn-repeat');
-    if (btn) {
-      if (AppState.study.isRepeat) {
-        btn.classList.add('repeat-active');
-      } else {
-        btn.classList.remove('repeat-active');
-      }
-    }
+    if (btn) btn.classList.toggle('repeat-active', AppState.study.isRepeat);
   },
 
-  /**
-   * 連続再生を開始
-   */
   startAutoPlay: function() {
     if (!AppState.study.isAutoPlay) return;
-    
-    // 現在の面を読み上げ
     this.speakCurrentSide(() => {
       if (!AppState.study.isAutoPlay) return;
-      
-      // 待機時間を取得（マイナス対応、デフォルト0）
-      const waitTime = this.getWaitTime('waitTimeAfterFlip');
-      
-      // 読み上げ完了後の処理
-      const waitTimeMs = Math.max(0, waitTime); // setTimeoutは0未満は0として扱う
+      const wait = Utils.getSettingNumber('waitTimeAfterFlip', 0) * 1000;
       setTimeout(() => {
         if (!AppState.study.isAutoPlay) return;
-        
         if (!AppState.study.isFlipped) {
-          // 表面の場合 → 裏面にめくる
           this.flipCard();
-          const flipWait = Math.max(0, waitTime);
-          setTimeout(() => {
-            if (AppState.study.isAutoPlay) {
-              this.startAutoPlay();
-            }
-          }, flipWait);
-        } else {
-          // 裏面の場合 → 次のカードへ
-          this.autoPlayNextCard();
-        }
-      }, waitTimeMs);
+          setTimeout(() => { if (AppState.study.isAutoPlay) this.startAutoPlay(); }, Math.max(0, wait));
+        } else { this.autoPlayNextCard(); }
+      }, Math.max(0, wait));
     });
   },
 
-  /**
-   * 連続再生で次のカードへ
-   */
   autoPlayNextCard: function() {
-    // カード間の待機時間を取得
-    const waitTime = this.getWaitTime('waitTimeBetweenCards');
-    
+    const wait = Utils.getSettingNumber('waitTimeBetweenCards', 0) * 1000;
     if (AppState.study.currentIndex < AppState.study.cards.length - 1) {
-      // 次のカードへ（スライドアニメーション付き）
-      this.slideToCardForAutoPlay(AppState.study.currentIndex + 1, 'next', () => {
-        setTimeout(() => {
-          if (AppState.study.isAutoPlay) {
-            this.startAutoPlay();
-          }
-        }, Math.max(0, waitTime));
-      });
+      this.slideToCardForAutoPlay(AppState.study.currentIndex + 1, 'next', () => { setTimeout(() => { if (AppState.study.isAutoPlay) this.startAutoPlay(); }, Math.max(0, wait)); });
     } else if (AppState.study.isRepeat) {
-      // リピートON: 最初に戻る
-      this.slideToCardForAutoPlay(0, 'next', () => {
-        setTimeout(() => {
-          if (AppState.study.isAutoPlay) {
-            this.startAutoPlay();
-          }
-        }, Math.max(0, waitTime));
-      });
-    } else {
-      // 学習完了
-      AppState.study.isAutoPlay = false;
-      this.updateAutoPlayButton();
-      this.finishStudy();
-    }
+      this.slideToCardForAutoPlay(0, 'next', () => { setTimeout(() => { if (AppState.study.isAutoPlay) this.startAutoPlay(); }, Math.max(0, wait)); });
+    } else { AppState.study.isAutoPlay = false; this.updateAutoPlayButton(); this.finishStudy(); }
   },
 
-  /**
-   * 連続再生用のスライドアニメーション
-   */
   slideToCardForAutoPlay: function(newIndex, direction, onComplete) {
     const flashcard = document.getElementById('flashcard');
-    const flashcardInner = flashcard.querySelector('.flashcard-inner');
-    
-    // 次のカードの内容を事前に準備（後ろで待機）
-    this.renderNextCard(newIndex);
-    
-    // 現在のカードをスライドアウト
-    if (direction === 'next') {
-      flashcard.classList.add('slide-out-left');
-    } else {
-      flashcard.classList.add('slide-out-right');
-    }
-    
-    // アニメーション完了後にカードを切り替え
+    const inner = flashcard.querySelector('.flashcard-inner');
+    CardRenderer.renderNext(AppState.study.cards[newIndex]);
+    flashcard.classList.add(direction === 'next' ? 'slide-out-left' : 'slide-out-right');
     setTimeout(() => {
-      // インデックスを更新
       AppState.study.currentIndex = newIndex;
-      
-      // transitionを一時的に無効化してカードを即座にリセット
-      flashcard.style.transition = 'none';
-      flashcardInner.style.transition = 'none';
-      
-      flashcard.classList.remove('slide-out-left', 'slide-out-right');
-      flashcard.classList.remove('flipped');
+      flashcard.style.transition = 'none'; inner.style.transition = 'none';
+      flashcard.classList.remove('slide-out-left', 'slide-out-right', 'flipped');
       AppState.study.isFlipped = false;
-      
-      // カードの内容を更新
       this.updateCardContent();
-      
-      // 強制リフローで変更を適用
       flashcard.offsetHeight;
-      
-      // transitionを再有効化
-      flashcard.style.transition = '';
-      flashcardInner.style.transition = '';
-      
-      // 次のカードを準備
+      flashcard.style.transition = ''; inner.style.transition = '';
       this.prepareNextCard();
-      
       this.updateStudyProgress();
       if (onComplete) onComplete();
-    }, 400); // スライドアウトの時間
+    }, ANIMATION_DURATION.SLIDE);
   },
 
-  /**
-   * 設定から待機時間を取得（ミリ秒）
-   */
-  getWaitTime: function(key) {
-    const value = parseFloat(AppState.settings[key]);
-    if (isNaN(value)) return 0;
-    // 秒をミリ秒に変換、マイナス値もそのまま適用
-    return value * 1000;
-  },
+  // 読み上げ
+  speakCurrentCard: function() { if (AppState.study.isSpeaking) { Speech.stop(); return; } this.speakCurrentSide(); },
 
-  /**
-   * 現在の面を読み上げ（表面=英語、裏面=日本語）
-   */
   speakCurrentSide: function(onComplete) {
     const card = AppState.study.cards[AppState.study.currentIndex];
-    if (!card) {
-      if (onComplete) onComplete();
-      return;
-    }
-    
-    const isFlipped = AppState.study.isFlipped;
-    const targetSide = isFlipped ? '裏' : '表';
-    
-    // 読み上げ順序に従って、現在の面のフィールドを取得
-    const speechFields = AppState.fields
-      .filter(f => f.displaySide === targetSide && f.speechOrder && f.speechOrder !== '-' && f.speechOrder !== '')
+    if (!card) { if (onComplete) onComplete(); return; }
+    const side = AppState.study.isFlipped ? '裏' : '表';
+    const fields = AppState.fields.filter(f => f.displaySide === side && f.speechOrder && f.speechOrder !== '-' && f.speechOrder !== '')
       .sort((a, b) => (parseInt(a.speechOrder) || 99) - (parseInt(b.speechOrder) || 99));
-    
-    if (speechFields.length === 0) {
-      if (onComplete) onComplete();
-      return;
-    }
-    
-    const speechItems = speechFields.map(field => {
-      return {
-        text: card.fields[field.name] || '',
-        lang: this.detectLanguage(field.name, card.fields[field.name])
-      };
-    }).filter(item => item.text);
-    
-    if (speechItems.length === 0) {
-      if (onComplete) onComplete();
-      return;
-    }
-    
-    this.speakSequence(speechItems, 0, onComplete);
+    if (fields.length === 0) { if (onComplete) onComplete(); return; }
+    const items = fields.map(f => ({ text: card.fields[f.name] || '', lang: Speech.detectLanguage(f.name, card.fields[f.name]) })).filter(i => i.text);
+    if (items.length === 0) { if (onComplete) onComplete(); return; }
+    Speech.speakSequence(items, 0, onComplete);
   },
 
-  /**
-   * 現在のカードを読み上げ（手動ボタン用）
-   */
-  speakCurrentCard: function() {
-    if (AppState.study.isSpeaking) {
-      this.stopSpeech();
-      return;
-    }
-    
-    this.speakCurrentSide();
-  },
-
-  /**
-   * 言語を推定
-   */
-  detectLanguage: function(fieldName, text) {
-    // フィールド名から推定
-    const lowerName = fieldName.toLowerCase();
-    if (lowerName.includes('英語') || lowerName.includes('english') || lowerName === 'en') {
-      return 'en-US';
-    }
-    if (lowerName.includes('日本語') || lowerName.includes('japanese') || lowerName === 'ja' || 
-        lowerName.includes('読み') || lowerName.includes('例文')) {
-      return 'ja-JP';
-    }
-    
-    // テキストの内容から推定
-    if (text) {
-      // 日本語文字が含まれているか
-      if (/[぀-ゟ゠-ヿ一-龯]/.test(text)) {
-        return 'ja-JP';
-      }
-    }
-    
-    // デフォルトは英語
-    return 'en-US';
-  },
-
-  /**
-   * 順番に読み上げ
-   */
-  speakSequence: function(items, index, onComplete) {
-    if (index >= items.length) {
-      // 読み上げ完了
-      this.setSpeakingState(false);
-      if (onComplete) onComplete();
-      return;
-    }
-    
-    const item = items[index];
-    this.speak(item.text, item.lang, () => {
-      // 次のアイテムへ（間隔なし）
-      this.speakSequence(items, index + 1, onComplete);
-    });
-  },
-
-  /**
-   * テキストを読み上げ
-   */
-  speak: function(text, lang, onEnd) {
-    if (!('speechSynthesis' in window)) {
-      console.warn('Speech synthesis not supported');
-      if (onEnd) onEnd();
-      return;
-    }
-    
-    // 既存の読み上げを停止
-    window.speechSynthesis.cancel();
-    
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = lang;
-    
-    // 読み上げ速度を設定（数値に変換）
-    if (lang === 'en-US') {
-      const rate = parseFloat(AppState.settings.speechRateEn);
-      utterance.rate = isNaN(rate) ? 1.0 : Math.max(0.1, Math.min(10, rate));
-    } else {
-      const rate = parseFloat(AppState.settings.speechRateJa);
-      utterance.rate = isNaN(rate) ? 1.0 : Math.max(0.1, Math.min(10, rate));
-    }
-    
-    console.log('Speaking:', text, 'lang:', lang, 'rate:', utterance.rate);
-    
-    this.setSpeakingState(true);
-    
-    utterance.onend = () => {
-      if (onEnd) onEnd();
-    };
-    
-    utterance.onerror = (e) => {
-      // 'interrupted' は手動停止時の正常な動作なのでエラーとして表示しない
-      if (e.error !== 'interrupted') {
-        console.error('Speech error:', e);
-      }
-      this.setSpeakingState(false);
-      // interruptedの場合はonEndを呼ばない（手動停止なので）
-      if (e.error !== 'interrupted' && onEnd) {
-        onEnd();
-      }
-    };
-    
-    window.speechSynthesis.speak(utterance);
-  },
-
-  /**
-   * 読み上げを停止
-   */
-  stopSpeech: function() {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    this.setSpeakingState(false);
-  },
-
-  /**
-   * 読み上げ状態を設定
-   */
   setSpeakingState: function(isSpeaking) {
     AppState.study.isSpeaking = isSpeaking;
     const btn = document.getElementById('btn-speech');
-    if (btn) {
-      if (isSpeaking) {
-        btn.classList.add('speaking');
-        btn.querySelector('.material-icons').textContent = 'stop';
-      } else {
-        btn.classList.remove('speaking');
-        btn.querySelector('.material-icons').textContent = 'volume_up';
-      }
-    }
+    if (btn) { btn.classList.toggle('speaking', isSpeaking); btn.querySelector('.material-icons').textContent = isSpeaking ? 'stop' : 'volume_up'; }
   },
 
-  /**
-   * 設定画面（ステップ10で実装）
-   */
-  showSettings: function() {
-    alert('設定画面\n（ステップ10で実装）');
-  }
+  stopSpeech: function() { Speech.stop(); },
+
+  // 設定画面
+  showSettings: function() { this.showScreen('settings-screen'); this.renderSettingsScreen(); },
+
+  renderSettingsScreen: function() {
+    const stats = Stats.calculate();
+    const container = document.getElementById('settings-content');
+    if (!container) return;
+    
+    const speechRateEn = Utils.getSettingNumber('speechRateEn', 1.0);
+    const speechRateJa = Utils.getSettingNumber('speechRateJa', 1.0);
+    const waitTimeAfterFlip = Utils.getSettingNumber('waitTimeAfterFlip', 0);
+    const waitTimeBetweenCards = Utils.getSettingNumber('waitTimeBetweenCards', 0);
+    
+    container.innerHTML = '<div class="setting-section"><h3>学習統計</h3><div class="stats-detail">' +
+      '<div class="stat-row"><span>総カード数</span><span>' + stats.total + '枚</span></div>' +
+      '<div class="stat-row"><span>学習済み</span><span>' + stats.studied + '枚</span></div>' +
+      '<div class="stat-row"><span>合格</span><span>' + stats.passed + '枚</span></div>' +
+      '<div class="stat-row"><span>復習待ち</span><span>' + stats.review + '枚</span></div>' +
+      '<div class="stat-row"><span>総正解数</span><span>' + stats.totalCorrect + '回</span></div>' +
+      '<div class="stat-row"><span>総不正解数</span><span>' + stats.totalIncorrect + '回</span></div>' +
+      '<div class="stat-row"><span>今日の学習</span><span>' + AppState.todayStudyCount + '枚</span></div>' +
+      '<div class="stat-row highlight"><span>正解率</span><span>' + stats.accuracy + '%</span></div></div></div>' +
+      '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">record_voice_over</span>読み上げ速度</h3>' +
+      '<div class="setting-slider-row"><label>英語</label><input type="range" id="setting-speech-en" min="0.5" max="2" step="0.1" value="' + speechRateEn + '"><span id="setting-speech-en-val">' + speechRateEn + 'x</span></div>' +
+      '<div class="setting-slider-row"><label>日本語</label><input type="range" id="setting-speech-ja" min="0.5" max="2" step="0.1" value="' + speechRateJa + '"><span id="setting-speech-ja-val">' + speechRateJa + 'x</span></div></div>' +
+      '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">timer</span>待機時間</h3>' +
+      '<div class="setting-slider-row"><label>めくり後</label><input type="range" id="setting-wait-flip" min="0" max="5" step="0.5" value="' + waitTimeAfterFlip + '"><span id="setting-wait-flip-val">' + waitTimeAfterFlip + '秒</span></div>' +
+      '<div class="setting-slider-row"><label>カード間</label><input type="range" id="setting-wait-card" min="0" max="5" step="0.5" value="' + waitTimeBetweenCards + '"><span id="setting-wait-card-val">' + waitTimeBetweenCards + '秒</span></div></div>' +
+      '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">link</span>データ管理</h3>' +
+      '<a href="' + SPREADSHEET_URL + '" target="_blank" class="spreadsheet-link"><span class="material-icons">open_in_new</span>スプレッドシートを開く</a>' +
+      '<p class="setting-hint">カードデータや詳細設定はスプレッドシートで編集できます。</p></div>';
+    
+    this.setupSettingsListeners();
+  },
+
+  setupSettingsListeners: function() {
+    const self = this;
+    // 読み上げ速度（英語）
+    document.getElementById('setting-speech-en').addEventListener('input', function() {
+      const val = parseFloat(this.value);
+      document.getElementById('setting-speech-en-val').textContent = val + 'x';
+      AppState.settings.speechRateEn = val;
+    });
+    // 読み上げ速度（日本語）
+    document.getElementById('setting-speech-ja').addEventListener('input', function() {
+      const val = parseFloat(this.value);
+      document.getElementById('setting-speech-ja-val').textContent = val + 'x';
+      AppState.settings.speechRateJa = val;
+    });
+    // 待機時間（めくり後）
+    document.getElementById('setting-wait-flip').addEventListener('input', function() {
+      const val = parseFloat(this.value);
+      document.getElementById('setting-wait-flip-val').textContent = val + '秒';
+      AppState.settings.waitTimeAfterFlip = val;
+    });
+    // 待機時間（カード間）
+    document.getElementById('setting-wait-card').addEventListener('input', function() {
+      const val = parseFloat(this.value);
+      document.getElementById('setting-wait-card-val').textContent = val + '秒';
+      AppState.settings.waitTimeBetweenCards = val;
+    });
+  },
+
+  closeSettings: function() { this.showScreen('home-screen'); }
 };
 
-// ============================================
-// DOM読み込み完了時に初期化
-// ============================================
-document.addEventListener('DOMContentLoaded', function() {
-  App.init();
-});
+document.addEventListener('DOMContentLoaded', function() { App.init(); });
 </script>

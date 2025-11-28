@@ -187,9 +187,18 @@
         </div>
       </div>
 
-      <!-- 設定画面（ステップ10で実装） -->
+      <!-- 設定画面 -->
       <div id="settings-screen" class="screen">
-        <p>設定画面（後のステップで実装）</p>
+        <div class="settings-header">
+          <button class="btn btn-icon" onclick="App.closeSettings()">
+            <span class="material-icons">arrow_back</span>
+          </button>
+          <h2>設定・統計</h2>
+          <div style="width: 40px;"></div>
+        </div>
+        <div class="settings-content" id="settings-content">
+          <!-- 動的に生成 -->
+        </div>
       </div>
 
       <!-- デッキ選択画面 -->
