@@ -131,6 +131,18 @@
 
         <!-- フラッシュカード -->
         <div class="flashcard-container">
+          <!-- 次のカード（後ろで待機） -->
+          <div class="flashcard-next" id="flashcard-next">
+            <div class="flashcard-inner">
+              <div class="flashcard-front">
+                <div class="card-content" id="next-front-content">
+                  <!-- 動的に生成 -->
+                </div>
+                <div class="card-hint">タップでめくる</div>
+              </div>
+            </div>
+          </div>
+          <!-- 現在のカード（手前で表示） -->
           <div class="flashcard" id="flashcard" onclick="App.flipCard()">
             <div class="flashcard-inner">
               <!-- 表面 -->

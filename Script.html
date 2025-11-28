@@ -388,6 +388,9 @@ const App = {
     
     // ナビゲーションボタンの状態を更新
     this.updateNavButtons();
+    
+    // 次のカードを準備（後ろで待機）
+    this.prepareNextCard();
   },
 
   /**
@@ -492,9 +495,13 @@ const App = {
    */
   slideToCard: function(newIndex, direction) {
     const flashcard = document.getElementById('flashcard');
+    const flashcardInner = flashcard.querySelector('.flashcard-inner');
     
     // 読み上げ中なら停止
     this.stopSpeech();
+    
+    // 次のカードの内容を事前に準備（後ろで待機）
+    this.renderNextCard(newIndex);
     
     // 現在のカードをスライドアウト
     if (direction === 'next') {
@@ -508,35 +515,69 @@ const App = {
       // インデックスを更新
       AppState.study.currentIndex = newIndex;
       
-      // アニメーションクラスをリセット
-      flashcard.classList.remove('slide-out-left', 'slide-out-right');
+      // transitionを一時的に無効化してカードを即座にリセット
+      flashcard.style.transition = 'none';
+      flashcardInner.style.transition = 'none';
       
-      // カードの内容を更新（フリップもリセット）
+      flashcard.classList.remove('slide-out-left', 'slide-out-right');
       flashcard.classList.remove('flipped');
       AppState.study.isFlipped = false;
+      
+      // カードの内容を更新
       this.updateCardContent();
       
-      // 反対側からスライドイン
-      if (direction === 'next') {
-        flashcard.classList.add('slide-in-right');
-      } else {
-        flashcard.classList.add('slide-in-left');
-      }
-      
-      // 強制リフローで初期位置を設定
+      // 強制リフローで変更を適用
       flashcard.offsetHeight;
       
-      // スライドインアニメーション
-      flashcard.classList.remove('slide-in-right', 'slide-in-left');
-      flashcard.classList.add('slide-in-active');
+      // transitionを再有効化
+      flashcard.style.transition = '';
+      flashcardInner.style.transition = '';
       
-      // アニメーション完了後にクリーンアップ
-      setTimeout(() => {
-        flashcard.classList.remove('slide-in-active');
-      }, 400);
+      // 次のカードを準備
+      this.prepareNextCard();
       
       this.updateStudyProgress();
     }, 400); // スライドアウトの時間
+  },
+
+  /**
+   * 次のカードの内容を描画（後ろで待機させる）
+   */
+  renderNextCard: function(nextIndex) {
+    const nextCard = AppState.study.cards[nextIndex];
+    if (!nextCard) {
+      document.getElementById('flashcard-next').style.visibility = 'hidden';
+      return;
+    }
+    
+    document.getElementById('flashcard-next').style.visibility = 'visible';
+    
+    const fields = AppState.fields;
+    const frontFields = fields
+      .filter(f => f.displaySide === '表')
+      .sort((a, b) => (parseInt(a.displayOrder) || 99) - (parseInt(b.displayOrder) || 99));
+    
+    const nextFrontContent = document.getElementById('next-front-content');
+    nextFrontContent.innerHTML = frontFields.map((field, index) => {
+      const value = nextCard.fields[field.name] || '';
+      const isFirst = index === 0;
+      return '<div class="card-field">' +
+        '<div class="card-field-label">' + this.escapeHtml(field.name) + '</div>' +
+        '<div class="card-field-value' + (isFirst ? ' large' : '') + '">' + this.escapeHtml(value) + '</div>' +
+      '</div>';
+    }).join('');
+  },
+
+  /**
+   * 次のカードを準備
+   */
+  prepareNextCard: function() {
+    const nextIndex = AppState.study.currentIndex + 1;
+    if (nextIndex < AppState.study.cards.length) {
+      this.renderNextCard(nextIndex);
+    } else {
+      document.getElementById('flashcard-next').style.visibility = 'hidden';
+    }
   },
 
   /**
@@ -1207,6 +1248,10 @@ const App = {
    */
   slideToCardForAutoPlay: function(newIndex, direction, onComplete) {
     const flashcard = document.getElementById('flashcard');
+    const flashcardInner = flashcard.querySelector('.flashcard-inner');
+    
+    // 次のカードの内容を事前に準備（後ろで待機）
+    this.renderNextCard(newIndex);
     
     // 現在のカードをスライドアウト
     if (direction === 'next') {
@@ -1220,34 +1265,29 @@ const App = {
       // インデックスを更新
       AppState.study.currentIndex = newIndex;
       
-      // アニメーションクラスをリセット
-      flashcard.classList.remove('slide-out-left', 'slide-out-right');
+      // transitionを一時的に無効化してカードを即座にリセット
+      flashcard.style.transition = 'none';
+      flashcardInner.style.transition = 'none';
       
-      // カードの内容を更新（フリップもリセット）
+      flashcard.classList.remove('slide-out-left', 'slide-out-right');
       flashcard.classList.remove('flipped');
       AppState.study.isFlipped = false;
+      
+      // カードの内容を更新
       this.updateCardContent();
       
-      // 反対側からスライドイン
-      if (direction === 'next') {
-        flashcard.classList.add('slide-in-right');
-      } else {
-        flashcard.classList.add('slide-in-left');
-      }
-      
-      // 強制リフローで初期位置を設定
+      // 強制リフローで変更を適用
       flashcard.offsetHeight;
       
-      // スライドインアニメーション
-      flashcard.classList.remove('slide-in-right', 'slide-in-left');
-      flashcard.classList.add('slide-in-active');
+      // transitionを再有効化
+      flashcard.style.transition = '';
+      flashcardInner.style.transition = '';
       
-      // アニメーション完了後にクリーンアップとコールバック
-      setTimeout(() => {
-        flashcard.classList.remove('slide-in-active');
-        this.updateStudyProgress();
-        if (onComplete) onComplete();
-      }, 400);
+      // 次のカードを準備
+      this.prepareNextCard();
+      
+      this.updateStudyProgress();
+      if (onComplete) onComplete();
     }, 400); // スライドアウトの時間
   },
 
