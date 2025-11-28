@@ -28,15 +28,23 @@ const CARDS_HEADER_ROWS = {
   DATA_START: 8        // データ開始行
 };
 
-// 進捗データ列（Cardsシート内、右端に配置）
-const PROGRESS_COLUMNS = {
-  CORRECT_COUNT: '正解数',
-  INCORRECT_COUNT: '不正解数',
-  STREAK: '連続正解',
-  NEXT_REVIEW_DATE: '次回復習日',
-  FAVORITE: 'お気に入り',
-  PASSED: '合格'
+// 固定列（システム列）の定義
+// これらの列は常に先頭に配置され、位置が固定されます
+const FIXED_COLUMNS = {
+  ID: { index: 0, name: 'ID' },
+  CORRECT_COUNT: { index: 1, name: '正解数' },
+  INCORRECT_COUNT: { index: 2, name: '不正解数' },
+  STREAK: { index: 3, name: '連続正解' },
+  NEXT_REVIEW_DATE: { index: 4, name: '次回復習日' },
+  FAVORITE: { index: 5, name: 'お気に入り' },
+  PASSED: { index: 6, name: '合格' }
 };
+
+// 固定列の数（ID + 進捗6列 = 7列）
+const FIXED_COLUMN_COUNT = 7;
+
+// カスタムフィールド開始列（0-indexed: 7 = H列）
+const CUSTOM_FIELD_START_INDEX = 7;
 
 // ============================================
 // Webアプリケーション
@@ -101,46 +109,58 @@ function initializeSheet(sheet, sheetName) {
 }
 
 /**
- * Cardsシートを初期化（進捗列を含む）
+ * Cardsシートを初期化
+ * 列構造: [固定列7列] + [カスタムフィールド（デッキ、英語、日本語など）]
+ * 固定列: ID, 正解数, 不正解数, 連続正解, 次回復習日, お気に入り, 合格
  */
 function initializeCardsSheet(sheet) {
-  // カードフィールド + 進捗列
+  // 固定列（7列）+ カスタムフィールド（6列）= 13列
   const headers = [
-    ['ID', 'デッキ', '英語', '日本語', '読み', '例文', '発音記号', '正解数', '不正解数', '連続正解', '次回復習日', 'お気に入り', '合格'],
-    ['-', '-', '表', '裏', '裏', '裏', '非表示', '-', '-', '-', '-', '-', '-'],
-    ['-', '-', '1', '1', '2', '3', '-', '-', '-', '-', '-', '-', '-'],
-    ['-', '-', '1', '2', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
-    ['-', '-', '左', '右', '右', '右', '非表示', '-', '-', '-', '-', '-', '-'],
-    ['-', '-', '1', '1', '2', '3', '-', '-', '-', '-', '-', '-', '-'],
-    ['-', '-', '1', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
-    ['8', 'サンプル', 'apple', 'りんご', 'アップル', 'I eat an apple every day.', 'ˈæp.əl', 0, 0, 0, '', false, false],
-    ['9', 'サンプル', 'book', '本', 'ブック', 'This is a book.', 'bʊk', 0, 0, 0, '', false, false],
-    ['10', 'サンプル', 'cat', '猫', 'キャット', 'The cat is sleeping.', 'kæt', 0, 0, 0, '', false, false]
+    // 固定列7列                                                        + カスタムフィールド
+    ['ID', '正解数', '不正解数', '連続正解', '次回復習日', 'お気に入り', '合格', 'デッキ', '英語', '日本語', '読み', '例文', '発音記号'],
+    // displaySide: 固定列は'-'、カスタムフィールドは表示設定
+    ['-', '-', '-', '-', '-', '-', '-', '-', '表', '裏', '裏', '裏', '非表示'],
+    // displayOrder
+    ['-', '-', '-', '-', '-', '-', '-', '-', '1', '1', '2', '3', '-'],
+    // speechOrder
+    ['-', '-', '-', '-', '-', '-', '-', '-', '1', '2', '-', '-', '-'],
+    // listSide
+    ['-', '-', '-', '-', '-', '-', '-', '-', '左', '右', '右', '右', '非表示'],
+    // listOrder
+    ['-', '-', '-', '-', '-', '-', '-', '-', '1', '1', '2', '3', '-'],
+    // listSpeechOrder
+    ['-', '-', '-', '-', '-', '-', '-', '-', '1', '-', '-', '-', '-'],
+    // サンプルデータ
+    [1, 0, 0, 0, '', false, false, 'サンプル', 'apple', 'りんご', 'アップル', 'I eat an apple every day.', 'ˈæp.əl'],
+    [2, 0, 0, 0, '', false, false, 'サンプル', 'book', '本', 'ブック', 'This is a book.', 'bʊk'],
+    [3, 0, 0, 0, '', false, false, 'サンプル', 'cat', '猫', 'キャット', 'The cat is sleeping.', 'kæt']
   ];
   
   sheet.getRange(1, 1, headers.length, headers[0].length).setValues(headers);
   
   // ヘッダー行のスタイル設定
   sheet.getRange(1, 1, 1, headers[0].length).setBackground('#4285f4').setFontColor('#ffffff').setFontWeight('bold');
+  // 固定列のヘッダー背景色を区別
+  sheet.getRange(1, 1, 1, FIXED_COLUMN_COUNT).setBackground('#1a73e8');
+  // 設定行の背景色
   sheet.getRange(2, 1, 4, headers[0].length).setBackground('#e8f0fe');  // カード表示設定
   sheet.getRange(5, 1, 3, headers[0].length).setBackground('#fff3e0');  // 一覧表示設定
+  // 固定列の設定行背景を薄いグレーに
+  sheet.getRange(2, 1, 6, FIXED_COLUMN_COUNT).setBackground('#f5f5f5');
 }
 
 /**
- * 進捗列のインデックスを取得
+ * 固定列かどうかを判定
  */
-function getProgressColumnIndices(fields) {
-  const indices = {};
-  for (let i = 0; i < fields.length; i++) {
-    const name = fields[i].name;
-    if (name === PROGRESS_COLUMNS.CORRECT_COUNT) indices.correctCount = i;
-    else if (name === PROGRESS_COLUMNS.INCORRECT_COUNT) indices.incorrectCount = i;
-    else if (name === PROGRESS_COLUMNS.STREAK) indices.streak = i;
-    else if (name === PROGRESS_COLUMNS.NEXT_REVIEW_DATE) indices.nextReviewDate = i;
-    else if (name === PROGRESS_COLUMNS.FAVORITE) indices.favorite = i;
-    else if (name === PROGRESS_COLUMNS.PASSED) indices.passed = i;
-  }
-  return indices;
+function isFixedColumn(columnIndex) {
+  return columnIndex < FIXED_COLUMN_COUNT;
+}
+
+/**
+ * 固定列名のリストを取得
+ */
+function getFixedColumnNames() {
+  return Object.values(FIXED_COLUMNS).map(col => col.name);
 }
 
 /**
@@ -153,8 +173,10 @@ function initializeSettingsSheet(sheet) {
     ['speechRateJa', '1.0', '日本語読み上げ速度 (0.5〜2.0)'],
     ['listSpeechRateEn', '1.0', '一覧表示時の英語読み上げ速度 (0.5〜2.0)'],
     ['listSpeechRateJa', '1.0', '一覧表示時の日本語読み上げ速度 (0.5〜2.0)'],
-    ['waitTimeBetweenCards', '3', 'カード間の待機時間（秒）'],
-    ['waitTimeAfterFlip', '2', 'めくり後の待機時間（秒）'],
+    ['listWaitBetweenFields', '0', '一覧読み上げ時のフィールド間の待機時間（秒）'],
+    ['listWaitBetweenCards', '0.3', '一覧読み上げ時のカード間の待機時間（秒）'],
+    ['waitTimeBetweenCards', '3', '学習中のカード間の待機時間（秒）'],
+    ['waitTimeAfterFlip', '2', '学習中のめくり後の待機時間（秒）'],
     ['autoFlip', 'true', '読み上げ後に自動でめくるか'],
     ['repeatMode', 'false', 'リピート再生モード'],
     ['shuffleCards', 'true', 'カードシャッフル'],
@@ -174,7 +196,8 @@ function initializeSettingsSheet(sheet) {
 // ============================================
 
 /**
- * フィールド定義を取得（進捗列は表示対象から除外）
+ * フィールド定義を取得
+ * 固定列（ID, 進捗データ）とカスタムフィールドを区別して返す
  */
 function getFields() {
   const sheet = getOrCreateSheet(SHEET_NAMES.CARDS);
@@ -190,11 +213,11 @@ function getFields() {
   const listOrders = sheet.getRange(CARDS_HEADER_ROWS.LIST_ORDER, 1, 1, lastCol).getValues()[0];
   const listSpeechOrders = sheet.getRange(CARDS_HEADER_ROWS.LIST_SPEECH_ORDER, 1, 1, lastCol).getValues()[0];
   
-  const progressColumnNames = Object.values(PROGRESS_COLUMNS);
+  const fixedColumnNames = getFixedColumnNames();
   
   const fields = [];
   for (let i = 0; i < lastCol; i++) {
-    // 進捗列もfieldsに含める（ただしdisplaySideは'-'）
+    const isFixed = isFixedColumn(i);
     fields.push({
       index: i,
       name: fieldNames[i],
@@ -204,7 +227,8 @@ function getFields() {
       listSide: listSides[i],
       listOrder: listOrders[i],
       listSpeechOrder: listSpeechOrders[i],
-      isProgressColumn: progressColumnNames.includes(fieldNames[i])
+      isFixedColumn: isFixed,
+      isProgressColumn: isFixed && fieldNames[i] !== 'ID'
     });
   }
   
@@ -212,7 +236,8 @@ function getFields() {
 }
 
 /**
- * 全カードデータを取得（進捗データを含む）
+ * 全カードデータを取得
+ * 固定列（進捗データ）を除き、ID + カスタムフィールドのみを返す
  */
 function getCards() {
   const sheet = getOrCreateSheet(SHEET_NAMES.CARDS);
@@ -222,7 +247,6 @@ function getCards() {
   if (lastRow < CARDS_HEADER_ROWS.DATA_START) return [];
   
   const fields = getFields();
-  const progressIndices = getProgressColumnIndices(fields);
   const dataRange = sheet.getRange(CARDS_HEADER_ROWS.DATA_START, 1, lastRow - CARDS_HEADER_ROWS.DATA_START + 1, lastCol);
   const data = dataRange.getValues();
   
@@ -231,8 +255,8 @@ function getCards() {
     const row = data[i];
     const rowNumber = CARDS_HEADER_ROWS.DATA_START + i;
     
-    // 空行はスキップ
-    if (!row[0] && !row[1] && !row[2]) continue;
+    // ID列が空の行はスキップ
+    if (!row[FIXED_COLUMNS.ID.index]) continue;
     
     const card = {
       rowNumber: rowNumber,
@@ -240,15 +264,9 @@ function getCards() {
     };
     
     for (let j = 0; j < fields.length; j++) {
-      // 進捗列はfieldsに含めない
-      const fieldName = fields[j].name;
-      if (fieldName !== PROGRESS_COLUMNS.CORRECT_COUNT &&
-          fieldName !== PROGRESS_COLUMNS.INCORRECT_COUNT &&
-          fieldName !== PROGRESS_COLUMNS.STREAK &&
-          fieldName !== PROGRESS_COLUMNS.NEXT_REVIEW_DATE &&
-          fieldName !== PROGRESS_COLUMNS.FAVORITE &&
-          fieldName !== PROGRESS_COLUMNS.PASSED) {
-        card.fields[fieldName] = row[j];
+      // 進捗列（ID以外の固定列）はfieldsに含めない
+      if (!fields[j].isProgressColumn) {
+        card.fields[fields[j].name] = row[j];
       }
     }
     
@@ -259,22 +277,16 @@ function getCards() {
 }
 
 /**
- * 進捗データを取得（Cardsシートから）
+ * 進捗データを取得（固定列から直接読み取り）
  */
 function getProgress() {
   const sheet = getOrCreateSheet(SHEET_NAMES.CARDS);
   const lastRow = sheet.getLastRow();
-  const lastCol = sheet.getLastColumn();
   
   if (lastRow < CARDS_HEADER_ROWS.DATA_START) return {};
   
-  const fields = getFields();
-  const progressIndices = getProgressColumnIndices(fields);
-  
-  // 進捗列が存在しない場合は空を返す
-  if (Object.keys(progressIndices).length < 6) return {};
-  
-  const dataRange = sheet.getRange(CARDS_HEADER_ROWS.DATA_START, 1, lastRow - CARDS_HEADER_ROWS.DATA_START + 1, lastCol);
+  // 固定列のみ読み取り（ID + 進捗6列 = 7列）
+  const dataRange = sheet.getRange(CARDS_HEADER_ROWS.DATA_START, 1, lastRow - CARDS_HEADER_ROWS.DATA_START + 1, FIXED_COLUMN_COUNT);
   const data = dataRange.getValues();
   
   const progress = {};
@@ -283,10 +295,10 @@ function getProgress() {
     const row = data[i];
     const rowNumber = CARDS_HEADER_ROWS.DATA_START + i;
     
-    // 空行はスキップ
-    if (!row[0] && !row[1] && !row[2]) continue;
+    // ID列が空の行はスキップ
+    if (!row[FIXED_COLUMNS.ID.index]) continue;
     
-    const nextReviewDateValue = row[progressIndices.nextReviewDate];
+    const nextReviewDateValue = row[FIXED_COLUMNS.NEXT_REVIEW_DATE.index];
     let nextReviewDate = null;
     if (nextReviewDateValue) {
       if (nextReviewDateValue instanceof Date) {
@@ -297,12 +309,12 @@ function getProgress() {
     }
     
     progress[rowNumber] = {
-      correctCount: row[progressIndices.correctCount] || 0,
-      incorrectCount: row[progressIndices.incorrectCount] || 0,
-      streak: row[progressIndices.streak] || 0,
+      correctCount: row[FIXED_COLUMNS.CORRECT_COUNT.index] || 0,
+      incorrectCount: row[FIXED_COLUMNS.INCORRECT_COUNT.index] || 0,
+      streak: row[FIXED_COLUMNS.STREAK.index] || 0,
       nextReviewDate: nextReviewDate,
-      favorite: row[progressIndices.favorite] === true || row[progressIndices.favorite] === 'TRUE',
-      passed: row[progressIndices.passed] === true || row[progressIndices.passed] === 'TRUE'
+      favorite: row[FIXED_COLUMNS.FAVORITE.index] === true || row[FIXED_COLUMNS.FAVORITE.index] === 'TRUE',
+      passed: row[FIXED_COLUMNS.PASSED.index] === true || row[FIXED_COLUMNS.PASSED.index] === 'TRUE'
     };
   }
   
@@ -406,27 +418,25 @@ function getInitialData() {
 // ============================================
 
 /**
- * 進捗データを保存（Cardsシートに直接保存）
+ * 進捗データを保存（固定列に直接保存）
  * @param {number} rowNumber - カードの行番号
  * @param {Object} progressData - 進捗データ
  */
 function saveProgress(rowNumber, progressData) {
   const sheet = getOrCreateSheet(SHEET_NAMES.CARDS);
-  const fields = getFields();
-  const progressIndices = getProgressColumnIndices(fields);
   
-  // 進捗列が存在しない場合はエラー
-  if (Object.keys(progressIndices).length < 6) {
-    throw new Error('進捗列がCardsシートに存在しません。');
-  }
+  // 進捗データを配列として準備（固定列のインデックス順）
+  const progressRow = [
+    progressData.correctCount || 0,
+    progressData.incorrectCount || 0,
+    progressData.streak || 0,
+    progressData.nextReviewDate || '',
+    progressData.favorite || false,
+    progressData.passed || false
+  ];
   
-  // 各進捗データを書き込み
-  sheet.getRange(rowNumber, progressIndices.correctCount + 1).setValue(progressData.correctCount || 0);
-  sheet.getRange(rowNumber, progressIndices.incorrectCount + 1).setValue(progressData.incorrectCount || 0);
-  sheet.getRange(rowNumber, progressIndices.streak + 1).setValue(progressData.streak || 0);
-  sheet.getRange(rowNumber, progressIndices.nextReviewDate + 1).setValue(progressData.nextReviewDate || '');
-  sheet.getRange(rowNumber, progressIndices.favorite + 1).setValue(progressData.favorite || false);
-  sheet.getRange(rowNumber, progressIndices.passed + 1).setValue(progressData.passed || false);
+  // 進捗列（B-G列、インデックス1-6）に一括書き込み
+  sheet.getRange(rowNumber, FIXED_COLUMNS.CORRECT_COUNT.index + 1, 1, 6).setValues([progressRow]);
   
   return { success: true, rowNumber: rowNumber };
 }
@@ -437,24 +447,21 @@ function saveProgress(rowNumber, progressData) {
  */
 function saveProgressBatch(progressList) {
   const sheet = getOrCreateSheet(SHEET_NAMES.CARDS);
-  const fields = getFields();
-  const progressIndices = getProgressColumnIndices(fields);
-  
-  // 進捗列が存在しない場合はエラー
-  if (Object.keys(progressIndices).length < 6) {
-    throw new Error('進捗列がCardsシートに存在しません。');
-  }
   
   for (const item of progressList) {
     const rowNumber = item.rowNumber;
     const prog = item.progressData;
     
-    sheet.getRange(rowNumber, progressIndices.correctCount + 1).setValue(prog.correctCount || 0);
-    sheet.getRange(rowNumber, progressIndices.incorrectCount + 1).setValue(prog.incorrectCount || 0);
-    sheet.getRange(rowNumber, progressIndices.streak + 1).setValue(prog.streak || 0);
-    sheet.getRange(rowNumber, progressIndices.nextReviewDate + 1).setValue(prog.nextReviewDate || '');
-    sheet.getRange(rowNumber, progressIndices.favorite + 1).setValue(prog.favorite || false);
-    sheet.getRange(rowNumber, progressIndices.passed + 1).setValue(prog.passed || false);
+    const progressRow = [
+      prog.correctCount || 0,
+      prog.incorrectCount || 0,
+      prog.streak || 0,
+      prog.nextReviewDate || '',
+      prog.favorite || false,
+      prog.passed || false
+    ];
+    
+    sheet.getRange(rowNumber, FIXED_COLUMNS.CORRECT_COUNT.index + 1, 1, 6).setValues([progressRow]);
   }
   
   return { success: true, updated: progressList.length };
@@ -494,31 +501,22 @@ function calculateNextReviewDate(streak) {
 /**
  * カードデータと進捗を保存
  * @param {number} rowNumber - カードの行番号
- * @param {Object} fieldData - フィールドデータ
+ * @param {Object} fieldData - フィールドデータ（カスタムフィールドのみ）
  * @param {Object} progressData - 進捗データ
  */
 function saveCardData(rowNumber, fieldData, progressData) {
   const sheet = getOrCreateSheet(SHEET_NAMES.CARDS);
   const fields = getFields();
-  const progressIndices = getProgressColumnIndices(fields);
   
-  // 各フィールドを更新（進捗列以外）
+  // 各フィールドを更新（固定列以外のカスタムフィールドのみ）
   for (const field of fields) {
-    if (fieldData.hasOwnProperty(field.name)) {
-      // 進捗列でないフィールドのみ更新
-      if (field.name !== PROGRESS_COLUMNS.CORRECT_COUNT &&
-          field.name !== PROGRESS_COLUMNS.INCORRECT_COUNT &&
-          field.name !== PROGRESS_COLUMNS.STREAK &&
-          field.name !== PROGRESS_COLUMNS.NEXT_REVIEW_DATE &&
-          field.name !== PROGRESS_COLUMNS.FAVORITE &&
-          field.name !== PROGRESS_COLUMNS.PASSED) {
-        const colIndex = field.index + 1; // 1-indexed
-        sheet.getRange(rowNumber, colIndex).setValue(fieldData[field.name]);
-      }
+    if (fieldData.hasOwnProperty(field.name) && !field.isFixedColumn) {
+      const colIndex = field.index + 1; // 1-indexed
+      sheet.getRange(rowNumber, colIndex).setValue(fieldData[field.name]);
     }
   }
   
-  // 進捗データも保存（Cardsシートに直接）
+  // 進捗データも保存
   if (progressData) {
     saveProgress(rowNumber, progressData);
   }
@@ -542,6 +540,32 @@ function testConnection() {
       message: 'エラー: ' + e.message
     };
   }
+}
+
+/**
+ * 設定を保存
+ * @param {string} key - 設定キー
+ * @param {any} value - 設定値
+ */
+function saveSetting(key, value) {
+  const sheet = getOrCreateSheet(SHEET_NAMES.SETTINGS);
+  const lastRow = sheet.getLastRow();
+  
+  // 既存の設定を検索
+  if (lastRow > 1) {
+    const keys = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < keys.length; i++) {
+      if (keys[i][0] === key) {
+        // 既存の設定を更新
+        sheet.getRange(i + 2, 2).setValue(value);
+        return { success: true, key: key, value: value };
+      }
+    }
+  }
+  
+  // 新規設定を追加
+  sheet.getRange(lastRow + 1, 1, 1, 2).setValues([[key, value]]);
+  return { success: true, key: key, value: value };
 }
 
 /**

@@ -1032,6 +1032,28 @@ body {
   font-size: 1.2rem;
 }
 
+/* クリック可能な統計行 */
+.stat-row.stat-clickable {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.stat-row.stat-clickable:hover {
+  background: #e8f0fe;
+  transform: translateX(4px);
+}
+
+.stat-row.stat-clickable span:first-child::after {
+  content: '→';
+  margin-left: 0.5rem;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.stat-row.stat-clickable:hover span:first-child::after {
+  opacity: 0.5;
+}
+
 .setting-row {
   display: flex;
   justify-content: space-between;
@@ -1078,13 +1100,15 @@ body {
 }
 
 .setting-slider-row label {
-  min-width: 60px;
+  min-width: 80px;
+  flex-shrink: 0;
   color: #555;
   font-size: 0.9rem;
 }
 
 .setting-slider-row input[type="range"] {
   flex: 1;
+  min-width: 100px;
   height: 6px;
   -webkit-appearance: none;
   appearance: none;
@@ -1591,6 +1615,203 @@ body {
 /* ============================================
    レスポンシブ
    ============================================ */
+
+/* スマホ対応 (max-width: 480px) */
+@media (max-width: 480px) {
+  html {
+    font-size: 14px;
+  }
+  
+  .header {
+    padding: 0.75rem;
+  }
+  
+  .header-title {
+    font-size: 1.1rem;
+  }
+  
+  .main-content {
+    padding: 0.5rem;
+  }
+  
+  /* 統計カード */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+  
+  .stat-card {
+    padding: 0.75rem;
+  }
+  
+  .stat-value {
+    font-size: 1.25rem;
+  }
+  
+  /* 設定スライダー */
+  .setting-slider-row {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+  }
+  
+  .setting-slider-row label {
+    min-width: 70px;
+    font-size: 0.85rem;
+  }
+  
+  .setting-slider-row input[type="range"] {
+    flex: 1 1 100%;
+    order: 3;
+    min-width: 0;
+  }
+  
+  .setting-slider-row span {
+    min-width: 45px;
+    font-size: 0.85rem;
+  }
+  
+  /* 設定セクション */
+  .setting-section {
+    padding: 1rem;
+  }
+  
+  .settings-content .setting-section h3 {
+    font-size: 0.9rem;
+  }
+  
+  /* 統計行 */
+  .stat-row {
+    padding: 0.6rem;
+  }
+  
+  .stat-row span:first-child {
+    font-size: 0.85rem;
+  }
+  
+  /* カード一覧 */
+  .card-list-filter {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .search-box {
+    min-width: 100%;
+  }
+  
+  .card-list-filter select {
+    width: 100%;
+  }
+  
+  .card-list-filter-options {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .filter-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .filter-group select {
+    flex: 1;
+    max-width: 150px;
+  }
+  
+  /* 読み上げ設定バー */
+  .card-list-speech-settings {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem;
+  }
+  
+  .speech-lang-group {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  /* カードアイテム */
+  .card-list-item {
+    flex-direction: column;
+  }
+  
+  .card-list-left,
+  .card-list-right {
+    width: 100%;
+  }
+  
+  .card-list-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+    border-left: none;
+    border-top: 1px solid #e0e0e0;
+  }
+  
+  /* フラッシュカード */
+  .flashcard-front,
+  .flashcard-back {
+    min-height: 250px;
+    padding: 1.5rem;
+  }
+  
+  .card-field-value.large {
+    font-size: 2rem;
+  }
+  
+  /* 回答ボタン */
+  .answer-buttons {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .btn-answer {
+    padding: 1rem;
+    font-size: 1rem;
+  }
+  
+  /* ナビボタン */
+  .nav-buttons {
+    gap: 0.5rem;
+  }
+  
+  .btn-nav {
+    padding: 0.6rem 0.75rem;
+    font-size: 0.9rem;
+  }
+  
+  /* カード編集 */
+  .card-edit-field textarea {
+    min-height: 60px;
+    font-size: 0.95rem;
+  }
+  
+  .progress-stats {
+    gap: 0.5rem;
+  }
+  
+  .progress-stats span {
+    font-size: 0.8rem;
+    padding: 0.4rem 0.5rem;
+  }
+}
+
+/* タブレット対応 */
+@media (min-width: 481px) and (max-width: 768px) {
+  .setting-slider-row label {
+    min-width: 75px;
+  }
+  
+  .card-list-item {
+    flex-direction: row;
+  }
+  
+  .card-list-actions {
+    border-left: 1px solid #e0e0e0;
+    border-top: none;
+  }
+}
+
+/* デスクトップ対応 */
 @media (min-width: 600px) {
   .stats-grid {
     grid-template-columns: repeat(4, 1fr);
@@ -1604,6 +1825,32 @@ body {
   .action-buttons .btn-large {
     flex: 1;
     min-width: 200px;
+  }
+}
+
+/* タッチデバイス向けの調整 */
+@media (hover: none) and (pointer: coarse) {
+  .btn, .btn-icon, .action-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  .deck-item {
+    padding: 0.9rem 0.75rem;
+  }
+  
+  .setting-slider-row input[type="range"]::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .setting-slider-row input[type="range"]::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .stat-row.stat-clickable {
+    min-height: 48px;
   }
 }
 </style>

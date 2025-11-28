@@ -58,6 +58,8 @@ const DEFAULT_SETTINGS = {
   speechRateJa: 1.0,
   listSpeechRateEn: 1.0,
   listSpeechRateJa: 1.0,
+  listWaitBetweenFields: 0,
+  listWaitBetweenCards: 0.3,
   waitTimeAfterFlip: 0,
   waitTimeBetweenCards: 0,
   interval_1: 1,
@@ -213,7 +215,15 @@ const Speech = {
       return;
     }
     const item = items[index];
-    this.speak(item.text, item.lang, () => this.speakSequence(items, index + 1, onComplete, useListRate), useListRate);
+    // 一覧表示時はフィールド間の待機時間を設定から取得
+    const waitTime = useListRate ? Utils.getSettingNumber('listWaitBetweenFields', DEFAULT_SETTINGS.listWaitBetweenFields) * 1000 : 0;
+    this.speak(item.text, item.lang, () => {
+      if (waitTime > 0 && index < items.length - 1) {
+        setTimeout(() => this.speakSequence(items, index + 1, onComplete, useListRate), waitTime);
+      } else {
+        this.speakSequence(items, index + 1, onComplete, useListRate);
+      }
+    }, useListRate);
   },
 
   stop: function() {
@@ -673,7 +683,29 @@ const App = {
     this.showScreen('card-list-screen');
   },
 
-  closeCardList: function() { this.showScreen('home-screen'); },
+  // フィルター付きカード一覧表示（設定画面の統計からの遷移用）
+  showCardListWithFilter: function(filterType) {
+    // まず一覧画面に遷移
+    this.populateDeckFilter();
+    this.showScreen('card-list-screen');
+    
+    // フィルターをリセット
+    document.getElementById('card-search').value = '';
+    document.getElementById('card-list-deck-filter').value = '';
+    document.getElementById('card-list-side-filter').value = 'both';
+    document.getElementById('card-list-fav-filter').value = '';
+    document.getElementById('card-list-pass-filter').value = '';
+    
+    // AppStateにフィルタータイプを保存
+    AppState.cardListFilterType = filterType;
+    
+    this.renderCardList();
+  },
+
+  closeCardList: function() { 
+    AppState.cardListFilterType = null;
+    this.showScreen('home-screen'); 
+  },
 
   populateDeckFilter: function() {
     const select = document.getElementById('card-list-deck-filter');
@@ -684,7 +716,10 @@ const App = {
     select.innerHTML = html;
   },
 
-  filterCardList: function() { this.renderCardList(); },
+  filterCardList: function() { 
+    AppState.cardListFilterType = null; // 手動フィルター時はカスタムフィルターをリセット
+    this.renderCardList(); 
+  },
 
   renderCardList: function() {
     const container = document.getElementById('card-list-container');
@@ -693,8 +728,34 @@ const App = {
     const sideFilter = document.getElementById('card-list-side-filter').value;
     const favFilter = document.getElementById('card-list-fav-filter').value;
     const passFilter = document.getElementById('card-list-pass-filter').value;
+    const today = Utils.getTodayString();
     
     let cards = [...AppState.cards];
+    
+    // 統計画面からのカスタムフィルター
+    const customFilter = AppState.cardListFilterType;
+    if (customFilter) {
+      if (customFilter === 'studied') {
+        // 学習済み：正解または不正解が1回以上
+        cards = cards.filter(c => {
+          const p = AppState.progress[c.rowNumber];
+          return p && (p.correctCount > 0 || p.incorrectCount > 0);
+        });
+      } else if (customFilter === 'passed') {
+        // 合格
+        cards = cards.filter(c => {
+          const p = AppState.progress[c.rowNumber];
+          return p && p.passed;
+        });
+      } else if (customFilter === 'review') {
+        // 復習待ち
+        cards = cards.filter(c => {
+          const p = AppState.progress[c.rowNumber];
+          return p && p.nextReviewDate && p.nextReviewDate <= today && !p.passed;
+        });
+      }
+      // 'all'の場合はフィルターなし
+    }
     
     // デッキフィルター
     if (deckFilter) {
@@ -863,13 +924,16 @@ const App = {
       }
     }
     
+    // カード間の待機時間を設定から取得（ミリ秒に変換）
+    const waitTime = Utils.getSettingNumber('listWaitBetweenCards', DEFAULT_SETTINGS.listWaitBetweenCards) * 1000;
+    
     if (nextRowNumber) {
-      // 少し間を空けて次を再生
+      // 設定された時間だけ間を空けて次を再生
       setTimeout(() => {
         if (AppState.listAutoPlay && !AppState.listAutoPlayStopped) {
           this.speakCardInList(nextRowNumber, null);
         }
-      }, 500);
+      }, waitTime);
     } else if (AppState.listRepeat) {
       // リピートモードの場合、最初に戻る
       const firstItem = items[0];
@@ -879,7 +943,7 @@ const App = {
           if (AppState.listAutoPlay && !AppState.listAutoPlayStopped) {
             this.speakCardInList(firstRow, null);
           }
-        }, 500);
+        }, waitTime);
       }
     } else {
       // 連続再生終了
@@ -1002,13 +1066,20 @@ const App = {
     if (!card) return;
     
     AppState.editingCard = card;
-    document.getElementById('card-edit-title').textContent = 'カード #' + (rowNumber - 7);
+    
+    // IDの取得（フィールドにあればそれを使用、なければrowNumberから計算）
+    let cardId = card.fields['ID'];
+    if (cardId === undefined || cardId === null || cardId === '') {
+      // データ開始行が8なので、rowNumber - 7 がカード番号
+      cardId = rowNumber - 7;
+    }
+    document.getElementById('card-edit-title').textContent = 'カード #' + cardId;
     
     const container = document.getElementById('card-edit-content');
     let html = '';
     
-    // 進捗列は除外して表示
-    const editableFields = AppState.fields.filter(f => !f.isProgressColumn);
+    // 固定列（ID、進捗データ）は除外して表示
+    const editableFields = AppState.fields.filter(f => !f.isFixedColumn);
     
     editableFields.forEach(field => {
       const value = card.fields[field.name] || '';
@@ -1051,9 +1122,9 @@ const App = {
     const card = AppState.editingCard;
     const rowNumber = card.rowNumber;
     
-    // フィールド値を収集（進捗列以外）
+    // フィールド値を収集（固定列以外）
     const updatedFields = {};
-    const editableFields = AppState.fields.filter(f => !f.isProgressColumn);
+    const editableFields = AppState.fields.filter(f => !f.isFixedColumn);
     editableFields.forEach(field => {
       const textarea = document.getElementById('edit-field-' + field.name);
       if (textarea) {
@@ -1189,27 +1260,30 @@ const App = {
     const speechRateJa = Utils.getSettingNumber('speechRateJa', 1.0);
     const listSpeechRateEn = Utils.getSettingNumber('listSpeechRateEn', 1.0);
     const listSpeechRateJa = Utils.getSettingNumber('listSpeechRateJa', 1.0);
+    const listWaitBetweenFields = Utils.getSettingNumber('listWaitBetweenFields', 0);
+    const listWaitBetweenCards = Utils.getSettingNumber('listWaitBetweenCards', 0.3);
     const waitTimeAfterFlip = Utils.getSettingNumber('waitTimeAfterFlip', 0);
     const waitTimeBetweenCards = Utils.getSettingNumber('waitTimeBetweenCards', 0);
     
-    container.innerHTML = '<div class="setting-section"><h3>学習統計</h3><div class="stats-detail">' +
-      '<div class="stat-row"><span>総カード数</span><span>' + stats.total + '枚</span></div>' +
-      '<div class="stat-row"><span>学習済み</span><span>' + stats.studied + '枚</span></div>' +
-      '<div class="stat-row"><span>合格</span><span>' + stats.passed + '枚</span></div>' +
-      '<div class="stat-row"><span>復習待ち</span><span>' + stats.review + '枚</span></div>' +
+    container.innerHTML = '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">bar_chart</span>学習統計</h3><div class="stats-detail">' +
+      '<div class="stat-row stat-clickable" onclick="App.showCardListWithFilter(\'all\')"><span>総カード数</span><span>' + stats.total + '枚</span></div>' +
+      '<div class="stat-row stat-clickable" onclick="App.showCardListWithFilter(\'studied\')"><span>学習済み</span><span>' + stats.studied + '枚</span></div>' +
+      '<div class="stat-row stat-clickable" onclick="App.showCardListWithFilter(\'passed\')"><span>合格</span><span>' + stats.passed + '枚</span></div>' +
+      '<div class="stat-row stat-clickable" onclick="App.showCardListWithFilter(\'review\')"><span>復習待ち</span><span>' + stats.review + '枚</span></div>' +
       '<div class="stat-row"><span>総正解数</span><span>' + stats.totalCorrect + '回</span></div>' +
       '<div class="stat-row"><span>総不正解数</span><span>' + stats.totalIncorrect + '回</span></div>' +
       '<div class="stat-row"><span>今日の学習</span><span>' + AppState.todayStudyCount + '枚</span></div>' +
       '<div class="stat-row highlight"><span>正解率</span><span>' + stats.accuracy + '%</span></div></div></div>' +
-      '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">record_voice_over</span>学習中の読み上げ速度</h3>' +
-      '<div class="setting-slider-row"><label>英語</label><input type="range" id="setting-speech-en" min="0.5" max="2" step="0.1" value="' + speechRateEn + '"><span id="setting-speech-en-val">' + speechRateEn + 'x</span></div>' +
-      '<div class="setting-slider-row"><label>日本語</label><input type="range" id="setting-speech-ja" min="0.5" max="2" step="0.1" value="' + speechRateJa + '"><span id="setting-speech-ja-val">' + speechRateJa + 'x</span></div></div>' +
-      '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">list_alt</span>一覧表示の読み上げ速度</h3>' +
-      '<div class="setting-slider-row"><label>英語</label><input type="range" id="setting-list-speech-en" min="0.5" max="2" step="0.1" value="' + listSpeechRateEn + '"><span id="setting-list-speech-en-val">' + listSpeechRateEn + 'x</span></div>' +
-      '<div class="setting-slider-row"><label>日本語</label><input type="range" id="setting-list-speech-ja" min="0.5" max="2" step="0.1" value="' + listSpeechRateJa + '"><span id="setting-list-speech-ja-val">' + listSpeechRateJa + 'x</span></div></div>' +
-      '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">timer</span>待機時間</h3>' +
-      '<div class="setting-slider-row"><label>めくり後</label><input type="range" id="setting-wait-flip" min="0" max="5" step="0.5" value="' + waitTimeAfterFlip + '"><span id="setting-wait-flip-val">' + waitTimeAfterFlip + '秒</span></div>' +
-      '<div class="setting-slider-row"><label>カード間</label><input type="range" id="setting-wait-card" min="0" max="5" step="0.5" value="' + waitTimeBetweenCards + '"><span id="setting-wait-card-val">' + waitTimeBetweenCards + '秒</span></div></div>' +
+      '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">record_voice_over</span>学習モードの設定</h3>' +
+      '<div class="setting-slider-row"><label>英語速度</label><input type="range" id="setting-speech-en" min="0.5" max="2" step="0.1" value="' + speechRateEn + '"><span id="setting-speech-en-val">' + speechRateEn + 'x</span></div>' +
+      '<div class="setting-slider-row"><label>日本語速度</label><input type="range" id="setting-speech-ja" min="0.5" max="2" step="0.1" value="' + speechRateJa + '"><span id="setting-speech-ja-val">' + speechRateJa + 'x</span></div>' +
+      '<div class="setting-slider-row"><label>めくり後</label><input type="range" id="setting-wait-flip" min="0" max="3" step="0.1" value="' + waitTimeAfterFlip + '"><span id="setting-wait-flip-val">' + waitTimeAfterFlip + '秒</span></div>' +
+      '<div class="setting-slider-row"><label>カード間</label><input type="range" id="setting-wait-card" min="0" max="3" step="0.1" value="' + waitTimeBetweenCards + '"><span id="setting-wait-card-val">' + waitTimeBetweenCards + '秒</span></div></div>' +
+      '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">list_alt</span>一覧読み上げの設定</h3>' +
+      '<div class="setting-slider-row"><label>英語速度</label><input type="range" id="setting-list-speech-en" min="0.5" max="2" step="0.1" value="' + listSpeechRateEn + '"><span id="setting-list-speech-en-val">' + listSpeechRateEn + 'x</span></div>' +
+      '<div class="setting-slider-row"><label>日本語速度</label><input type="range" id="setting-list-speech-ja" min="0.5" max="2" step="0.1" value="' + listSpeechRateJa + '"><span id="setting-list-speech-ja-val">' + listSpeechRateJa + 'x</span></div>' +
+      '<div class="setting-slider-row"><label>フィールド間</label><input type="range" id="setting-list-wait-fields" min="0" max="3" step="0.1" value="' + listWaitBetweenFields + '"><span id="setting-list-wait-fields-val">' + listWaitBetweenFields + '秒</span></div>' +
+      '<div class="setting-slider-row"><label>カード間</label><input type="range" id="setting-list-wait-cards" min="0" max="3" step="0.1" value="' + listWaitBetweenCards + '"><span id="setting-list-wait-cards-val">' + listWaitBetweenCards + '秒</span></div></div>' +
       '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">link</span>データ管理</h3>' +
       '<a href="' + SPREADSHEET_URL + '" target="_blank" class="spreadsheet-link"><span class="material-icons">open_in_new</span>スプレッドシートを開く</a>' +
       '<p class="setting-hint">カードデータや詳細設定はスプレッドシートで編集できます。</p></div>';
@@ -1219,41 +1293,93 @@ const App = {
 
   setupSettingsListeners: function() {
     const self = this;
+    
+    // 設定を保存するヘルパー関数
+    function saveSettingToServer(key, value) {
+      google.script.run
+        .withSuccessHandler(() => console.log('Setting saved:', key, value))
+        .withFailureHandler(e => console.error('Failed to save setting:', e))
+        .saveSetting(key, value);
+    }
+    
     // 読み上げ速度（英語）
     document.getElementById('setting-speech-en').addEventListener('input', function() {
       const val = parseFloat(this.value);
       document.getElementById('setting-speech-en-val').textContent = val + 'x';
       AppState.settings.speechRateEn = val;
     });
+    document.getElementById('setting-speech-en').addEventListener('change', function() {
+      saveSettingToServer('speechRateEn', parseFloat(this.value));
+    });
+    
     // 読み上げ速度（日本語）
     document.getElementById('setting-speech-ja').addEventListener('input', function() {
       const val = parseFloat(this.value);
       document.getElementById('setting-speech-ja-val').textContent = val + 'x';
       AppState.settings.speechRateJa = val;
     });
+    document.getElementById('setting-speech-ja').addEventListener('change', function() {
+      saveSettingToServer('speechRateJa', parseFloat(this.value));
+    });
+    
     // 一覧表示の読み上げ速度（英語）
     document.getElementById('setting-list-speech-en').addEventListener('input', function() {
       const val = parseFloat(this.value);
       document.getElementById('setting-list-speech-en-val').textContent = val + 'x';
       AppState.settings.listSpeechRateEn = val;
     });
+    document.getElementById('setting-list-speech-en').addEventListener('change', function() {
+      saveSettingToServer('listSpeechRateEn', parseFloat(this.value));
+    });
+    
     // 一覧表示の読み上げ速度（日本語）
     document.getElementById('setting-list-speech-ja').addEventListener('input', function() {
       const val = parseFloat(this.value);
       document.getElementById('setting-list-speech-ja-val').textContent = val + 'x';
       AppState.settings.listSpeechRateJa = val;
     });
+    document.getElementById('setting-list-speech-ja').addEventListener('change', function() {
+      saveSettingToServer('listSpeechRateJa', parseFloat(this.value));
+    });
+    
     // 待機時間（めくり後）
     document.getElementById('setting-wait-flip').addEventListener('input', function() {
       const val = parseFloat(this.value);
       document.getElementById('setting-wait-flip-val').textContent = val + '秒';
       AppState.settings.waitTimeAfterFlip = val;
     });
+    document.getElementById('setting-wait-flip').addEventListener('change', function() {
+      saveSettingToServer('waitTimeAfterFlip', parseFloat(this.value));
+    });
+    
     // 待機時間（カード間）
     document.getElementById('setting-wait-card').addEventListener('input', function() {
       const val = parseFloat(this.value);
       document.getElementById('setting-wait-card-val').textContent = val + '秒';
       AppState.settings.waitTimeBetweenCards = val;
+    });
+    document.getElementById('setting-wait-card').addEventListener('change', function() {
+      saveSettingToServer('waitTimeBetweenCards', parseFloat(this.value));
+    });
+    
+    // 一覧読み上げ：フィールド間の待機時間
+    document.getElementById('setting-list-wait-fields').addEventListener('input', function() {
+      const val = parseFloat(this.value);
+      document.getElementById('setting-list-wait-fields-val').textContent = val + '秒';
+      AppState.settings.listWaitBetweenFields = val;
+    });
+    document.getElementById('setting-list-wait-fields').addEventListener('change', function() {
+      saveSettingToServer('listWaitBetweenFields', parseFloat(this.value));
+    });
+    
+    // 一覧読み上げ：カード間の待機時間
+    document.getElementById('setting-list-wait-cards').addEventListener('input', function() {
+      const val = parseFloat(this.value);
+      document.getElementById('setting-list-wait-cards-val').textContent = val + '秒';
+      AppState.settings.listWaitBetweenCards = val;
+    });
+    document.getElementById('setting-list-wait-cards').addEventListener('change', function() {
+      saveSettingToServer('listWaitBetweenCards', parseFloat(this.value));
     });
   },
 
