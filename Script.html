@@ -1,0 +1,189 @@
+<script>
+/**
+ * GAS フラッシュカード - クライアントサイドJavaScript
+ * ステップ1: 基本構造 + スプレッドシート接続
+ */
+
+// ============================================
+// グローバル状態
+// ============================================
+const AppState = {
+  fields: [],
+  cards: [],
+  progress: {},
+  settings: {},
+  decks: { tree: {}, list: [] },
+  isLoading: true,
+  error: null
+};
+
+// ============================================
+// アプリケーションメイン
+// ============================================
+const App = {
+  /**
+   * 初期化
+   */
+  init: function() {
+    console.log('App initializing...');
+    this.loadInitialData();
+  },
+
+  /**
+   * 初期データを読み込み
+   */
+  loadInitialData: function() {
+    this.showScreen('loading-screen');
+    
+    google.script.run
+      .withSuccessHandler(this.onDataLoaded.bind(this))
+      .withFailureHandler(this.onDataError.bind(this))
+      .getInitialData();
+  },
+
+  /**
+   * データ読み込み成功時
+   */
+  onDataLoaded: function(data) {
+    console.log('Data loaded:', data);
+    
+    AppState.fields = data.fields || [];
+    AppState.cards = data.cards || [];
+    AppState.progress = data.progress || {};
+    AppState.settings = data.settings || {};
+    AppState.decks = data.decks || { tree: {}, list: [] };
+    AppState.isLoading = false;
+    
+    this.updateStats();
+    this.updateDebugInfo();
+    this.showScreen('home-screen');
+  },
+
+  /**
+   * データ読み込みエラー時
+   */
+  onDataError: function(error) {
+    console.error('Data load error:', error);
+    AppState.error = error;
+    AppState.isLoading = false;
+    
+    document.getElementById('error-message').textContent = error.message || 'データの読み込みに失敗しました';
+    this.showScreen('error-screen');
+  },
+
+  /**
+   * 再試行
+   */
+  retry: function() {
+    this.loadInitialData();
+  },
+
+  /**
+   * 画面切り替え
+   */
+  showScreen: function(screenId) {
+    document.querySelectorAll('.screen').forEach(screen => {
+      screen.classList.remove('active');
+    });
+    
+    const targetScreen = document.getElementById(screenId);
+    if (targetScreen) {
+      targetScreen.classList.add('active');
+    }
+  },
+
+  /**
+   * 統計情報を更新
+   */
+  updateStats: function() {
+    const cards = AppState.cards;
+    const progress = AppState.progress;
+    const today = new Date().toISOString().split('T')[0];
+    
+    // 学習済みカード数
+    let studiedCount = 0;
+    let passedCount = 0;
+    let reviewCount = 0;
+    
+    for (const card of cards) {
+      const rowNum = card.rowNumber;
+      const prog = progress[rowNum];
+      
+      if (prog) {
+        if (prog.correctCount > 0 || prog.incorrectCount > 0) {
+          studiedCount++;
+        }
+        if (prog.passed) {
+          passedCount++;
+        }
+        if (prog.nextReviewDate && prog.nextReviewDate <= today && !prog.passed) {
+          reviewCount++;
+        }
+      }
+    }
+    
+    document.getElementById('stat-today').textContent = '0'; // TODO: 今日の学習数
+    document.getElementById('stat-total').textContent = `${studiedCount} / ${cards.length}`;
+    document.getElementById('stat-passed').textContent = passedCount;
+    document.getElementById('stat-review').textContent = reviewCount;
+  },
+
+  /**
+   * デバッグ情報を更新（ステップ1用）
+   */
+  updateDebugInfo: function() {
+    document.getElementById('debug-connection').textContent = '✓ 接続成功';
+    document.getElementById('debug-connection').style.color = 'green';
+    document.getElementById('debug-card-count').textContent = AppState.cards.length;
+    document.getElementById('debug-field-count').textContent = AppState.fields.length;
+    document.getElementById('debug-deck-count').textContent = AppState.decks.list.length;
+  },
+
+  /**
+   * 生データを表示（ステップ1用）
+   */
+  showRawData: function() {
+    const rawDataEl = document.getElementById('debug-raw-data');
+    if (rawDataEl.classList.contains('show')) {
+      rawDataEl.classList.remove('show');
+    } else {
+      rawDataEl.textContent = JSON.stringify({
+        fields: AppState.fields,
+        cards: AppState.cards,
+        progress: AppState.progress,
+        settings: AppState.settings,
+        decks: AppState.decks
+      }, null, 2);
+      rawDataEl.classList.add('show');
+    }
+  },
+
+  /**
+   * 学習開始（ステップ2以降で実装）
+   */
+  startStudy: function(mode) {
+    alert('学習モード: ' + mode + '\n（次のステップで実装）');
+  },
+
+  /**
+   * デッキ選択（ステップ3で実装）
+   */
+  showDeckSelect: function() {
+    alert('デッキ選択\n（ステップ3で実装）');
+  },
+
+  /**
+   * 設定画面（ステップ10で実装）
+   */
+  showSettings: function() {
+    alert('設定画面\n（ステップ10で実装）');
+  }
+};
+
+// ============================================
+// DOM読み込み完了時に初期化
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+  App.init();
+});
+</script>

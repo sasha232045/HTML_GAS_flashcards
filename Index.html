@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <?!= include('Style'); ?>
+</head>
+<body>
+  <div id="app">
+    <!-- ヘッダー -->
+    <header class="header">
+      <h1 class="header-title">
+        <span class="material-icons">style</span>
+        GAS フラッシュカード
+      </h1>
+      <button class="header-btn" onclick="App.showSettings()">
+        <span class="material-icons">settings</span>
+      </button>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="main-content">
+      <!-- ローディング画面 -->
+      <div id="loading-screen" class="screen active">
+        <div class="loading-spinner"></div>
+        <p>データを読み込んでいます...</p>
+      </div>
+
+      <!-- エラー画面 -->
+      <div id="error-screen" class="screen">
+        <div class="error-icon">
+          <span class="material-icons">error_outline</span>
+        </div>
+        <h2>エラーが発生しました</h2>
+        <p id="error-message"></p>
+        <button class="btn btn-primary" onclick="App.retry()">再試行</button>
+      </div>
+
+      <!-- ホーム画面 -->
+      <div id="home-screen" class="screen">
+        <div class="stats-summary">
+          <h2>学習状況</h2>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <span class="material-icons">today</span>
+              <div class="stat-value" id="stat-today">0</div>
+              <div class="stat-label">今日の学習</div>
+            </div>
+            <div class="stat-card">
+              <span class="material-icons">library_books</span>
+              <div class="stat-value" id="stat-total">0 / 0</div>
+              <div class="stat-label">学習済み / 全体</div>
+            </div>
+            <div class="stat-card">
+              <span class="material-icons">check_circle</span>
+              <div class="stat-value" id="stat-passed">0</div>
+              <div class="stat-label">合格</div>
+            </div>
+            <div class="stat-card">
+              <span class="material-icons">schedule</span>
+              <div class="stat-value" id="stat-review">0</div>
+              <div class="stat-label">復習待ち</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="action-buttons">
+          <button class="btn btn-large btn-primary" onclick="App.startStudy('review')">
+            <span class="material-icons">replay</span>
+            今日の復習
+          </button>
+          <button class="btn btn-large btn-secondary" onclick="App.startStudy('new')">
+            <span class="material-icons">add_circle</span>
+            新規学習
+          </button>
+          <button class="btn btn-large btn-secondary" onclick="App.startStudy('all')">
+            <span class="material-icons">shuffle</span>
+            全体復習
+          </button>
+          <button class="btn btn-large btn-outline" onclick="App.showDeckSelect()">
+            <span class="material-icons">folder</span>
+            デッキ選択
+          </button>
+        </div>
+
+        <!-- デバッグ情報（ステップ1用） -->
+        <div class="debug-section">
+          <h3>デバッグ情報（ステップ1）</h3>
+          <div id="debug-info">
+            <p>接続状態: <span id="debug-connection">-</span></p>
+            <p>カード数: <span id="debug-card-count">-</span></p>
+            <p>フィールド数: <span id="debug-field-count">-</span></p>
+            <p>デッキ数: <span id="debug-deck-count">-</span></p>
+          </div>
+          <button class="btn btn-small" onclick="App.showRawData()">生データを表示</button>
+          <pre id="debug-raw-data" class="debug-raw"></pre>
+        </div>
+      </div>
+
+      <!-- 学習画面（ステップ2以降で実装） -->
+      <div id="study-screen" class="screen">
+        <p>学習画面（次のステップで実装）</p>
+      </div>
+
+      <!-- 設定画面（ステップ10で実装） -->
+      <div id="settings-screen" class="screen">
+        <p>設定画面（後のステップで実装）</p>
+      </div>
+    </main>
+
+    <!-- フッター -->
+    <footer class="footer">
+      <p>GAS フラッシュカード v1.0.0</p>
+    </footer>
+  </div>
+
+  <?!= include('Script'); ?>
+</body>
+</html>
