@@ -665,6 +665,217 @@ body {
 }
 
 /* ============================================
+   学習設定画面
+   ============================================ */
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding: 0.5rem 0;
+}
+
+.settings-header h2 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.setting-section {
+  background: white;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.setting-section h3 {
+  font-size: 0.9rem;
+  color: #666;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.current-deck-display {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: #f5f5f5;
+  border-radius: 8px;
+}
+
+.current-deck-display .material-icons {
+  color: #fbbc04;
+}
+
+.current-deck-display span:nth-child(2) {
+  flex: 1;
+  font-weight: 500;
+}
+
+/* ラジオボタングループ */
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.radio-item {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.radio-item:hover {
+  background: #f5f5f5;
+}
+
+.radio-item input[type="radio"] {
+  display: none;
+}
+
+.radio-item input[type="radio"]:checked + .radio-label {
+  color: #4285f4;
+  font-weight: 600;
+}
+
+.radio-item input[type="radio"]:checked + .radio-label .material-icons {
+  color: #4285f4;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #333;
+}
+
+.radio-label .material-icons {
+  color: #888;
+}
+
+.radio-item:has(input:checked) {
+  background: #e8f0fe;
+}
+
+/* チェックボックスグループ */
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.checkbox-item:hover {
+  background: #f5f5f5;
+}
+
+.checkbox-item input[type="checkbox"] {
+  display: none;
+}
+
+.checkbox-item input[type="checkbox"]:checked + .checkbox-label {
+  color: #4285f4;
+  font-weight: 600;
+}
+
+.checkbox-item input[type="checkbox"]:checked + .checkbox-label .material-icons {
+  color: #4285f4;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #333;
+}
+
+.checkbox-label .material-icons {
+  color: #888;
+}
+
+.checkbox-item:has(input:checked) {
+  background: #e8f0fe;
+}
+
+/* 範囲入力 */
+.range-inputs {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.range-input-group {
+  flex: 1;
+}
+
+.range-input-group label {
+  display: block;
+  font-size: 0.85rem;
+  color: #555;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.range-input-group input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+.range-input-group input:focus {
+  outline: none;
+  border-color: #4285f4;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+}
+
+.setting-hint {
+  font-size: 0.75rem;
+  color: #888;
+  margin-top: 0.5rem;
+}
+
+/* プレビュー表示 */
+.preview-count {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.preview-count .material-icons {
+  font-size: 1.5rem;
+}
+
+#filtered-card-count {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.study-start-actions {
+  margin-top: 1.5rem;
+}
+
+/* ============================================
    レスポンシブ
    ============================================ */
 @media (min-width: 600px) {

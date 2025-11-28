@@ -197,9 +197,126 @@
 
         <!-- アクションボタン -->
         <div class="deck-actions">
-          <button class="btn btn-primary btn-large" onclick="App.startStudyWithDeck()">
+          <button class="btn btn-primary btn-large" onclick="App.showStudySettings()">
             <span class="material-icons">play_arrow</span>
-            このデッキで学習開始
+            学習設定へ
+          </button>
+        </div>
+      </div>
+
+      <!-- 学習設定画面 -->
+      <div id="study-settings-screen" class="screen">
+        <div class="settings-header">
+          <button class="btn btn-icon" onclick="App.closeStudySettings()">
+            <span class="material-icons">arrow_back</span>
+          </button>
+          <h2>学習設定</h2>
+          <div style="width: 40px;"></div>
+        </div>
+
+        <!-- 選択中のデッキ -->
+        <div class="setting-section">
+          <h3>選択中のデッキ</h3>
+          <div class="current-deck-display">
+            <span class="material-icons">folder</span>
+            <span id="settings-deck-name">すべてのデッキ</span>
+            <button class="btn btn-small btn-outline" onclick="App.showDeckSelect()">変更</button>
+          </div>
+        </div>
+
+        <!-- 学習モード -->
+        <div class="setting-section">
+          <h3>学習モード</h3>
+          <div class="radio-group">
+            <label class="radio-item">
+              <input type="radio" name="studyMode" value="all" checked>
+              <span class="radio-label">
+                <span class="material-icons">shuffle</span>
+                全体復習
+              </span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" name="studyMode" value="review">
+              <span class="radio-label">
+                <span class="material-icons">replay</span>
+                今日の復習
+              </span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" name="studyMode" value="new">
+              <span class="radio-label">
+                <span class="material-icons">add_circle</span>
+                新規学習
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 学習範囲 -->
+        <div class="setting-section">
+          <h3>学習範囲</h3>
+          <div class="range-inputs">
+            <div class="range-input-group">
+              <label>開始単語番号</label>
+              <input type="number" id="word-start" min="1" placeholder="1">
+            </div>
+            <div class="range-input-group">
+              <label>学習単語数</label>
+              <input type="number" id="word-count" min="1" placeholder="全て">
+            </div>
+          </div>
+          <p class="setting-hint">※ 単語番号1 = スプレッドシートの行番号5（空欄で制限なし）</p>
+        </div>
+
+        <!-- フィルター -->
+        <div class="setting-section">
+          <h3>フィルター</h3>
+          <div class="checkbox-group">
+            <label class="checkbox-item">
+              <input type="checkbox" id="filter-favorite">
+              <span class="checkbox-label">
+                <span class="material-icons">star</span>
+                お気に入りのみ
+              </span>
+            </label>
+            <label class="checkbox-item">
+              <input type="checkbox" id="filter-not-passed">
+              <span class="checkbox-label">
+                <span class="material-icons">pending</span>
+                未合格のみ
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <!-- シャッフル設定 -->
+        <div class="setting-section">
+          <h3>表示順序</h3>
+          <div class="checkbox-group">
+            <label class="checkbox-item">
+              <input type="checkbox" id="setting-shuffle" checked>
+              <span class="checkbox-label">
+                <span class="material-icons">shuffle</span>
+                シャッフルする
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <!-- プレビュー -->
+        <div class="setting-section">
+          <h3>対象カード</h3>
+          <div class="preview-count" id="preview-count">
+            <span class="material-icons">library_books</span>
+            <span id="filtered-card-count">0</span>枚のカードが対象です
+          </div>
+        </div>
+
+        <!-- 開始ボタン -->
+        <div class="study-start-actions">
+          <button class="btn btn-primary btn-large" onclick="App.startFilteredStudy()">
+            <span class="material-icons">play_arrow</span>
+            学習開始
           </button>
         </div>
       </div>

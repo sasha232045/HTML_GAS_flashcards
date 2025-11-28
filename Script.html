@@ -25,7 +25,17 @@ const AppState = {
   },
   
   // デッキ選択状態（ステップ3追加）
-  selectedDeck: null      // 選択中のデッキパス（nullは全デッキ）
+  selectedDeck: null,      // 選択中のデッキパス（nullは全デッキ）
+  
+  // 学習設定（ステップ4追加）
+  studySettings: {
+    mode: 'all',           // 'all', 'review', 'new'
+    rangeStart: null,      // 開始行番号
+    rangeEnd: null,        // 終了行番号
+    filterFavorite: false, // お気に入りのみ
+    filterNotPassed: false,// 未合格のみ
+    shuffle: true          // シャッフル
+  }
 };
 
 // ============================================
@@ -674,34 +684,168 @@ const App = {
   },
 
   /**
-   * 選択したデッキで学習開始
+   * 学習設定画面を表示
    */
-  startStudyWithDeck: function() {
-    const deckPath = AppState.selectedDeck;
+  showStudySettings: function() {
+    // 設定画面のデッキ名を更新
+    const deckName = AppState.selectedDeck || 'すべてのデッキ';
+    document.getElementById('settings-deck-name').textContent = deckName;
     
-    // デッキに該当するカードをフィルタ
-    let studyCards;
-    if (deckPath === null) {
-      studyCards = [...AppState.cards];
-    } else {
-      studyCards = AppState.cards.filter(card => {
+    // 入力欄をリセット
+    document.getElementById('word-start').value = '';
+    document.getElementById('word-count').value = '';
+    document.getElementById('filter-favorite').checked = false;
+    document.getElementById('filter-not-passed').checked = false;
+    document.getElementById('setting-shuffle').checked = true;
+    document.querySelector('input[name="studyMode"][value="all"]').checked = true;
+    
+    // イベントリスナーを設定
+    this.setupStudySettingsListeners();
+    
+    // プレビューを更新
+    this.updateFilteredCardCount();
+    
+    this.showScreen('study-settings-screen');
+  },
+
+  /**
+   * 学習設定画面のイベントリスナーを設定
+   */
+  setupStudySettingsListeners: function() {
+    const self = this;
+    const inputs = [
+      'word-start', 'word-count', 'filter-favorite', 
+      'filter-not-passed', 'setting-shuffle'
+    ];
+    
+    inputs.forEach(id => {
+      const el = document.getElementById(id);
+      el.removeEventListener('change', self.updateFilteredCardCount.bind(self));
+      el.addEventListener('change', self.updateFilteredCardCount.bind(self));
+      if (el.type === 'number') {
+        el.removeEventListener('input', self.updateFilteredCardCount.bind(self));
+        el.addEventListener('input', self.updateFilteredCardCount.bind(self));
+      }
+    });
+    
+    // ラジオボタン
+    document.querySelectorAll('input[name="studyMode"]').forEach(radio => {
+      radio.removeEventListener('change', self.updateFilteredCardCount.bind(self));
+      radio.addEventListener('change', self.updateFilteredCardCount.bind(self));
+    });
+  },
+
+  /**
+   * 絞り込み結果のカード数を更新
+   */
+  updateFilteredCardCount: function() {
+    const cards = this.getFilteredCards();
+    document.getElementById('filtered-card-count').textContent = cards.length;
+  },
+
+  /**
+   * 現在の設定でフィルターされたカードを取得
+   */
+  getFilteredCards: function() {
+    const mode = document.querySelector('input[name="studyMode"]:checked').value;
+    const wordStart = parseInt(document.getElementById('word-start').value) || null;
+    const wordCount = parseInt(document.getElementById('word-count').value) || null;
+    const filterFavorite = document.getElementById('filter-favorite').checked;
+    const filterNotPassed = document.getElementById('filter-not-passed').checked;
+    
+    const today = new Date().toISOString().split('T')[0];
+    
+    let cards = [...AppState.cards];
+    
+    // デッキフィルター
+    if (AppState.selectedDeck !== null) {
+      cards = cards.filter(card => {
         const cardDeck = card.fields['デッキ'] || '';
-        return cardDeck === deckPath || cardDeck.startsWith(deckPath + '/');
+        return cardDeck === AppState.selectedDeck || cardDeck.startsWith(AppState.selectedDeck + '/');
       });
     }
     
+    // 単語番号でソート（行番号順）
+    cards.sort((a, b) => a.rowNumber - b.rowNumber);
+    
+    // 単語番号フィルター（単語番号1 = 行番号5）
+    // wordStart: 開始単語番号（1から始まる）
+    // wordCount: 学習する単語数
+    if (wordStart !== null && wordStart >= 1) {
+      // 開始単語番号のインデックスを計算（0始まり）
+      const startIndex = wordStart - 1;
+      
+      if (wordCount !== null && wordCount >= 1) {
+        // 開始位置から指定数だけ取得
+        cards = cards.slice(startIndex, startIndex + wordCount);
+      } else {
+        // 開始位置から最後まで
+        cards = cards.slice(startIndex);
+      }
+    } else if (wordCount !== null && wordCount >= 1) {
+      // 開始位置未指定で数だけ指定：最初から指定数
+      cards = cards.slice(0, wordCount);
+    }
+    
+    // 学習モードフィルター
+    if (mode === 'review') {
+      cards = cards.filter(card => {
+        const prog = AppState.progress[card.rowNumber];
+        if (!prog) return false;
+        return prog.nextReviewDate && prog.nextReviewDate <= today && !prog.passed;
+      });
+    } else if (mode === 'new') {
+      cards = cards.filter(card => {
+        const prog = AppState.progress[card.rowNumber];
+        return !prog || (prog.correctCount === 0 && prog.incorrectCount === 0);
+      });
+    }
+    
+    // お気に入りフィルター
+    if (filterFavorite) {
+      cards = cards.filter(card => {
+        const prog = AppState.progress[card.rowNumber];
+        return prog && prog.favorite;
+      });
+    }
+    
+    // 未合格フィルター
+    if (filterNotPassed) {
+      cards = cards.filter(card => {
+        const prog = AppState.progress[card.rowNumber];
+        return !prog || !prog.passed;
+      });
+    }
+    
+    return cards;
+  },
+
+  /**
+   * 学習設定画面を閉じる
+   */
+  closeStudySettings: function() {
+    this.showScreen('deck-screen');
+  },
+
+  /**
+   * 絞り込みで学習開始
+   */
+  startFilteredStudy: function() {
+    const shuffle = document.getElementById('setting-shuffle').checked;
+    let studyCards = this.getFilteredCards();
+    
     if (studyCards.length === 0) {
-      alert('このデッキにはカードがありません');
+      alert('条件に一致するカードがありません');
       return;
     }
     
     // シャッフル
-    if (AppState.settings.shuffleCards !== false) {
+    if (shuffle) {
       studyCards = this.shuffleArray(studyCards);
     }
     
     // 学習状態を初期化
-    AppState.study.mode = 'deck';
+    AppState.study.mode = 'filtered';
     AppState.study.cards = studyCards;
     AppState.study.currentIndex = 0;
     AppState.study.isFlipped = false;
