@@ -336,6 +336,137 @@ function getInitialData() {
 }
 
 // ============================================
+// データ保存 API
+// ============================================
+
+/**
+ * 進捗データを保存
+ * @param {number} rowNumber - カードの行番号
+ * @param {Object} progressData - 進捗データ
+ */
+function saveProgress(rowNumber, progressData) {
+  const sheet = getOrCreateSheet(SHEET_NAMES.PROGRESS);
+  const lastRow = sheet.getLastRow();
+  
+  // 既存の行を検索
+  let targetRow = -1;
+  if (lastRow > 1) {
+    const rowNumbers = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < rowNumbers.length; i++) {
+      if (rowNumbers[i][0] === rowNumber) {
+        targetRow = i + 2; // 1-indexed、ヘッダー行分を加算
+        break;
+      }
+    }
+  }
+  
+  // 保存するデータを準備
+  const data = [
+    rowNumber,
+    progressData.correctCount || 0,
+    progressData.incorrectCount || 0,
+    progressData.streak || 0,
+    progressData.nextReviewDate || '',
+    progressData.favorite || false,
+    progressData.passed || false
+  ];
+  
+  if (targetRow > 0) {
+    // 既存行を更新
+    sheet.getRange(targetRow, 1, 1, 7).setValues([data]);
+  } else {
+    // 新規行を追加
+    sheet.appendRow(data);
+  }
+  
+  return { success: true, rowNumber: rowNumber };
+}
+
+/**
+ * 複数の進捗データを一括保存
+ * @param {Array} progressList - [{rowNumber, progressData}, ...]
+ */
+function saveProgressBatch(progressList) {
+  const sheet = getOrCreateSheet(SHEET_NAMES.PROGRESS);
+  const lastRow = sheet.getLastRow();
+  
+  // 既存の行番号をマップ化
+  const existingRows = {};
+  if (lastRow > 1) {
+    const rowNumbers = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < rowNumbers.length; i++) {
+      if (rowNumbers[i][0]) {
+        existingRows[rowNumbers[i][0]] = i + 2;
+      }
+    }
+  }
+  
+  const updates = [];
+  const inserts = [];
+  
+  for (const item of progressList) {
+    const rowNumber = item.rowNumber;
+    const prog = item.progressData;
+    
+    const data = [
+      rowNumber,
+      prog.correctCount || 0,
+      prog.incorrectCount || 0,
+      prog.streak || 0,
+      prog.nextReviewDate || '',
+      prog.favorite || false,
+      prog.passed || false
+    ];
+    
+    if (existingRows[rowNumber]) {
+      updates.push({ row: existingRows[rowNumber], data: data });
+    } else {
+      inserts.push(data);
+    }
+  }
+  
+  // 既存行を更新
+  for (const update of updates) {
+    sheet.getRange(update.row, 1, 1, 7).setValues([update.data]);
+  }
+  
+  // 新規行を追加
+  if (inserts.length > 0) {
+    const startRow = sheet.getLastRow() + 1;
+    sheet.getRange(startRow, 1, inserts.length, 7).setValues(inserts);
+  }
+  
+  return { success: true, updated: updates.length, inserted: inserts.length };
+}
+
+/**
+ * 次回復習日を計算
+ * @param {number} streak - 連続正解数
+ * @returns {string} - 次回復習日（yyyy-MM-dd）
+ */
+function calculateNextReviewDate(streak) {
+  const settings = getSettings();
+  let interval = 1;
+  
+  if (streak >= 5) {
+    interval = settings.interval_5 || 30;
+  } else if (streak >= 4) {
+    interval = settings.interval_4 || 14;
+  } else if (streak >= 3) {
+    interval = settings.interval_3 || 7;
+  } else if (streak >= 2) {
+    interval = settings.interval_2 || 3;
+  } else if (streak >= 1) {
+    interval = settings.interval_1 || 1;
+  }
+  
+  const nextDate = new Date();
+  nextDate.setDate(nextDate.getDate() + interval);
+  
+  return Utilities.formatDate(nextDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
+// ============================================
 // テスト用関数
 // ============================================
 

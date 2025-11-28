@@ -21,7 +21,8 @@ const AppState = {
     mode: null,           // 'review', 'new', 'all'
     cards: [],            // 学習対象カード
     currentIndex: 0,      // 現在のカードインデックス
-    isFlipped: false      // カードがめくられているか
+    isFlipped: false,     // カードがめくられているか
+    sessionAnswers: {}    // 今回のセッションでの回答状態 {rowNumber: 'correct'|'incorrect'|null}
   },
   
   // デッキ選択状態（ステップ3追加）
@@ -304,6 +305,7 @@ const App = {
     AppState.study.cards = studyCards;
     AppState.study.currentIndex = 0;
     AppState.study.isFlipped = false;
+    AppState.study.sessionAnswers = {}; // セッション回答を初期化
     
     // 学習画面を表示
     this.showScreen('study-screen');
@@ -485,10 +487,60 @@ const App = {
   },
 
   /**
-   * 回答を記録（ステップ5で詳細実装）
+   * 回答を記録
    */
   answerCard: function(isCorrect) {
     console.log('Answer:', isCorrect ? 'Correct' : 'Incorrect');
+    
+    const card = AppState.study.cards[AppState.study.currentIndex];
+    const rowNumber = card.rowNumber;
+    
+    // 進捗データを取得または初期化
+    let prog = AppState.progress[rowNumber] || {
+      correctCount: 0,
+      incorrectCount: 0,
+      streak: 0,
+      nextReviewDate: null,
+      favorite: false,
+      passed: false
+    };
+    
+    // 前回の回答を取得（このセッション内での回答）
+    const previousAnswer = AppState.study.sessionAnswers[rowNumber];
+    
+    // 前回回答済みの場合、まず前回の回答を取り消す
+    if (previousAnswer !== undefined && previousAnswer !== null) {
+      if (previousAnswer === 'correct') {
+        prog.correctCount = Math.max(0, prog.correctCount - 1);
+        prog.streak = Math.max(0, prog.streak - 1);
+      } else if (previousAnswer === 'incorrect') {
+        prog.incorrectCount = Math.max(0, prog.incorrectCount - 1);
+        // 不正解後の連続は0になっていたので、復元は複雑
+        // ここでは単純に不正解数を減らすのみ
+      }
+      console.log('Previous answer cancelled:', previousAnswer);
+    }
+    
+    // 新しい回答を記録
+    if (isCorrect) {
+      prog.correctCount++;
+      prog.streak++;
+    } else {
+      prog.incorrectCount++;
+      prog.streak = 0; // 不正解で連続リセット
+    }
+    
+    // セッション回答を記録
+    AppState.study.sessionAnswers[rowNumber] = isCorrect ? 'correct' : 'incorrect';
+    
+    // 次回復習日を計算（スペースドリピティション）
+    prog.nextReviewDate = this.calculateNextReviewDate(prog.streak);
+    
+    // AppStateを更新
+    AppState.progress[rowNumber] = prog;
+    
+    // サーバーに保存
+    this.saveProgressToServer(rowNumber, prog);
     
     // 視覚的フィードバック
     const flashcard = document.getElementById('flashcard');
@@ -498,35 +550,99 @@ const App = {
     // アニメーション終了後に次のカードへ
     setTimeout(() => {
       flashcard.classList.remove(animClass);
-      // ステップ5で実装: 進捗を更新してサーバーに保存
       this.nextCard();
     }, 500);
   },
 
   /**
-   * お気に入り切り替え（ステップ5で詳細実装）
+   * 次回復習日を計算（スペースドリピティション）
    */
-  toggleFavorite: function() {
-    const card = AppState.study.cards[AppState.study.currentIndex];
-    const prog = AppState.progress[card.rowNumber] || {};
-    prog.favorite = !prog.favorite;
-    AppState.progress[card.rowNumber] = prog;
-    this.updateCardButtons(card);
-    console.log('Favorite toggled:', prog.favorite);
-    // ステップ5で実装: サーバーに保存
+  calculateNextReviewDate: function(streak) {
+    const settings = AppState.settings;
+    let interval = 1;
+    
+    if (streak >= 5) {
+      interval = settings.interval_5 || 30;
+    } else if (streak >= 4) {
+      interval = settings.interval_4 || 14;
+    } else if (streak >= 3) {
+      interval = settings.interval_3 || 7;
+    } else if (streak >= 2) {
+      interval = settings.interval_2 || 3;
+    } else if (streak >= 1) {
+      interval = settings.interval_1 || 1;
+    }
+    
+    const nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + interval);
+    
+    return nextDate.toISOString().split('T')[0];
   },
 
   /**
-   * 合格切り替え（ステップ5で詳細実装）
+   * 進捗をサーバーに保存
+   */
+  saveProgressToServer: function(rowNumber, progressData) {
+    google.script.run
+      .withSuccessHandler((result) => {
+        console.log('Progress saved:', result);
+      })
+      .withFailureHandler((error) => {
+        console.error('Failed to save progress:', error);
+      })
+      .saveProgress(rowNumber, progressData);
+  },
+
+  /**
+   * お気に入り切替え
+   */
+  toggleFavorite: function() {
+    const card = AppState.study.cards[AppState.study.currentIndex];
+    const rowNumber = card.rowNumber;
+    
+    // 進捗データを取得または初期化
+    let prog = AppState.progress[rowNumber] || {
+      correctCount: 0,
+      incorrectCount: 0,
+      streak: 0,
+      nextReviewDate: null,
+      favorite: false,
+      passed: false
+    };
+    
+    prog.favorite = !prog.favorite;
+    AppState.progress[rowNumber] = prog;
+    this.updateCardButtons(card);
+    console.log('Favorite toggled:', prog.favorite);
+    
+    // サーバーに保存
+    this.saveProgressToServer(rowNumber, prog);
+  },
+
+  /**
+   * 合格切替え
    */
   togglePassed: function() {
     const card = AppState.study.cards[AppState.study.currentIndex];
-    const prog = AppState.progress[card.rowNumber] || {};
+    const rowNumber = card.rowNumber;
+    
+    // 進捗データを取得または初期化
+    let prog = AppState.progress[rowNumber] || {
+      correctCount: 0,
+      incorrectCount: 0,
+      streak: 0,
+      nextReviewDate: null,
+      favorite: false,
+      passed: false
+    };
+    
     prog.passed = !prog.passed;
-    AppState.progress[card.rowNumber] = prog;
+    AppState.progress[rowNumber] = prog;
     this.updateCardButtons(card);
     console.log('Passed toggled:', prog.passed);
-    // ステップ5で実装: サーバーに保存
+    
+    // サーバーに保存
+    this.saveProgressToServer(rowNumber, prog);
   },
 
   /**
@@ -545,6 +661,7 @@ const App = {
     AppState.study.cards = [];
     AppState.study.currentIndex = 0;
     AppState.study.isFlipped = false;
+    AppState.study.sessionAnswers = {}; // セッション回答をクリア
     
     this.updateStats();
     this.showScreen('home-screen');
@@ -849,6 +966,7 @@ const App = {
     AppState.study.cards = studyCards;
     AppState.study.currentIndex = 0;
     AppState.study.isFlipped = false;
+    AppState.study.sessionAnswers = {}; // セッション回答を初期化
     
     // 学習画面を表示
     this.showScreen('study-screen');
