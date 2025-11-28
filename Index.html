@@ -170,6 +170,39 @@
       <div id="settings-screen" class="screen">
         <p>設定画面（後のステップで実装）</p>
       </div>
+
+      <!-- デッキ選択画面 -->
+      <div id="deck-screen" class="screen">
+        <div class="deck-header">
+          <button class="btn btn-icon" onclick="App.closeDeckSelect()">
+            <span class="material-icons">arrow_back</span>
+          </button>
+          <h2>デッキ選択</h2>
+          <div style="width: 40px;"></div>
+        </div>
+
+        <!-- 選択中のデッキ表示 -->
+        <div class="selected-deck-info">
+          <span class="material-icons">folder_open</span>
+          <span id="selected-deck-name">すべてのデッキ</span>
+          <span id="selected-deck-count" class="deck-count-badge">0枚</span>
+        </div>
+
+        <!-- デッキツリー -->
+        <div class="deck-tree-container">
+          <div class="deck-tree" id="deck-tree">
+            <!-- 動的に生成 -->
+          </div>
+        </div>
+
+        <!-- アクションボタン -->
+        <div class="deck-actions">
+          <button class="btn btn-primary btn-large" onclick="App.startStudyWithDeck()">
+            <span class="material-icons">play_arrow</span>
+            このデッキで学習開始
+          </button>
+        </div>
+      </div>
     </main>
 
     <!-- フッター -->

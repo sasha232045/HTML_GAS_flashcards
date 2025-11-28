@@ -22,7 +22,10 @@ const AppState = {
     cards: [],            // 学習対象カード
     currentIndex: 0,      // 現在のカードインデックス
     isFlipped: false      // カードがめくられているか
-  }
+  },
+  
+  // デッキ選択状態（ステップ3追加）
+  selectedDeck: null      // 選択中のデッキパス（nullは全デッキ）
 };
 
 // ============================================
@@ -538,10 +541,175 @@ const App = {
   },
 
   /**
-   * デッキ選択（ステップ3で実装）
+   * デッキ選択画面を表示
    */
   showDeckSelect: function() {
-    alert('デッキ選択\n（ステップ3で実装）');
+    this.renderDeckTree();
+    this.updateSelectedDeckInfo();
+    this.showScreen('deck-screen');
+  },
+
+  /**
+   * デッキ選択画面を閉じる
+   */
+  closeDeckSelect: function() {
+    this.showScreen('home-screen');
+  },
+
+  /**
+   * デッキツリーを描画
+   */
+  renderDeckTree: function() {
+    const container = document.getElementById('deck-tree');
+    const decks = AppState.decks;
+    
+    let html = '';
+    
+    // 「すべてのデッキ」オプション
+    const allSelected = AppState.selectedDeck === null;
+    html += '<div class="deck-item deck-all-item' + (allSelected ? ' selected' : '') + '" onclick="App.selectDeck(null)">';
+    html += '<span class="material-icons">folder_special</span>';
+    html += '<span class="deck-item-name">すべてのデッキ</span>';
+    html += '<span class="deck-item-count">' + AppState.cards.length + '枚</span>';
+    html += '</div>';
+    
+    // デッキツリーを再帰的に描画
+    html += this.renderDeckTreeNode(decks.tree, '');
+    
+    container.innerHTML = html;
+  },
+
+  /**
+   * デッキツリーノードを再帰的に描画
+   */
+  renderDeckTreeNode: function(node, parentPath) {
+    let html = '';
+    
+    for (const key in node) {
+      if (key === '_path' || key === '_children') continue;
+      
+      const deckData = node[key];
+      const path = parentPath ? parentPath + '/' + key : key;
+      const children = deckData._children || {};
+      const hasChildren = Object.keys(children).filter(k => k !== '_path' && k !== '_children').length > 0;
+      const cardCount = this.getCardCountForDeck(path);
+      const isSelected = AppState.selectedDeck === path;
+      
+      html += '<div class="deck-node">';
+      html += '<div class="deck-item' + (isSelected ? ' selected' : '') + '" onclick="App.selectDeck(\'' + this.escapeHtml(path) + '\')">';
+      
+      if (hasChildren) {
+        html += '<button class="deck-toggle" onclick="event.stopPropagation(); App.toggleDeckNode(this)">';
+        html += '<span class="material-icons">chevron_right</span>';
+        html += '</button>';
+      } else {
+        html += '<span style="width: 28px; display: inline-block;"></span>';
+      }
+      
+      html += '<span class="material-icons">folder</span>';
+      html += '<span class="deck-item-name">' + this.escapeHtml(key) + '</span>';
+      html += '<span class="deck-item-count">' + cardCount + '枚</span>';
+      html += '</div>';
+      
+      if (hasChildren) {
+        html += '<div class="deck-children" style="display: none;">';
+        html += this.renderDeckTreeNode(children, path);
+        html += '</div>';
+      }
+      
+      html += '</div>';
+    }
+    
+    return html;
+  },
+
+  /**
+   * デッキに含まれるカード数を取得
+   */
+  getCardCountForDeck: function(deckPath) {
+    return AppState.cards.filter(card => {
+      const cardDeck = card.fields['デッキ'] || '';
+      // 完全一致または子デッキ
+      return cardDeck === deckPath || cardDeck.startsWith(deckPath + '/');
+    }).length;
+  },
+
+  /**
+   * デッキノードの展開/折りたたみ
+   */
+  toggleDeckNode: function(button) {
+    const deckNode = button.closest('.deck-node');
+    const children = deckNode.querySelector('.deck-children');
+    
+    if (children) {
+      const isHidden = children.style.display === 'none';
+      children.style.display = isHidden ? 'block' : 'none';
+      button.classList.toggle('expanded', isHidden);
+    }
+  },
+
+  /**
+   * デッキを選択
+   */
+  selectDeck: function(deckPath) {
+    AppState.selectedDeck = deckPath;
+    this.renderDeckTree();
+    this.updateSelectedDeckInfo();
+  },
+
+  /**
+   * 選択中のデッキ情報を更新
+   */
+  updateSelectedDeckInfo: function() {
+    const nameEl = document.getElementById('selected-deck-name');
+    const countEl = document.getElementById('selected-deck-count');
+    
+    if (AppState.selectedDeck === null) {
+      nameEl.textContent = 'すべてのデッキ';
+      countEl.textContent = AppState.cards.length + '枚';
+    } else {
+      nameEl.textContent = AppState.selectedDeck;
+      countEl.textContent = this.getCardCountForDeck(AppState.selectedDeck) + '枚';
+    }
+  },
+
+  /**
+   * 選択したデッキで学習開始
+   */
+  startStudyWithDeck: function() {
+    const deckPath = AppState.selectedDeck;
+    
+    // デッキに該当するカードをフィルタ
+    let studyCards;
+    if (deckPath === null) {
+      studyCards = [...AppState.cards];
+    } else {
+      studyCards = AppState.cards.filter(card => {
+        const cardDeck = card.fields['デッキ'] || '';
+        return cardDeck === deckPath || cardDeck.startsWith(deckPath + '/');
+      });
+    }
+    
+    if (studyCards.length === 0) {
+      alert('このデッキにはカードがありません');
+      return;
+    }
+    
+    // シャッフル
+    if (AppState.settings.shuffleCards !== false) {
+      studyCards = this.shuffleArray(studyCards);
+    }
+    
+    // 学習状態を初期化
+    AppState.study.mode = 'deck';
+    AppState.study.cards = studyCards;
+    AppState.study.currentIndex = 0;
+    AppState.study.isFlipped = false;
+    
+    // 学習画面を表示
+    this.showScreen('study-screen');
+    this.renderCard();
+    this.updateStudyProgress();
   },
 
   /**
