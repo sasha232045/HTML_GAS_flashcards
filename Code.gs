@@ -19,11 +19,14 @@ const SHEET_NAMES = {
 
 // Cardsシートの設定行
 const CARDS_HEADER_ROWS = {
-  FIELD_NAME: 1,    // フィールド名
-  DISPLAY_SIDE: 2,  // 表示面（表/裏/非表示）
-  DISPLAY_ORDER: 3, // 表示順
-  SPEECH_ORDER: 4,  // 読上順
-  DATA_START: 5     // データ開始行
+  FIELD_NAME: 1,       // フィールド名
+  DISPLAY_SIDE: 2,     // 表示面（表/裏/非表示）
+  DISPLAY_ORDER: 3,    // 表示順
+  SPEECH_ORDER: 4,     // 読上順
+  LIST_SIDE: 5,        // 一覧表示位置（左/右/非表示）
+  LIST_ORDER: 6,       // 一覧表示順
+  LIST_SPEECH_ORDER: 7,// 一覧読上順
+  DATA_START: 8        // データ開始行
 };
 
 // ============================================
@@ -100,16 +103,20 @@ function initializeCardsSheet(sheet) {
     ['-', '-', '表', '裏', '裏', '裏', '非表示'],
     ['-', '-', '1', '1', '2', '3', '-'],
     ['-', '-', '1', '2', '-', '-', '-'],
-    ['5', 'サンプル', 'apple', 'りんご', 'アップル', 'I eat an apple every day.', 'ˈæp.əl'],
-    ['6', 'サンプル', 'book', '本', 'ブック', 'This is a book.', 'bʊk'],
-    ['7', 'サンプル', 'cat', '猫', 'キャット', 'The cat is sleeping.', 'kæt']
+    ['-', '-', '左', '右', '右', '右', '非表示'],
+    ['-', '-', '1', '1', '2', '3', '-'],
+    ['-', '-', '1', '-', '-', '-', '-'],
+    ['8', 'サンプル', 'apple', 'りんご', 'アップル', 'I eat an apple every day.', 'ˈæp.əl'],
+    ['9', 'サンプル', 'book', '本', 'ブック', 'This is a book.', 'bʊk'],
+    ['10', 'サンプル', 'cat', '猫', 'キャット', 'The cat is sleeping.', 'kæt']
   ];
   
   sheet.getRange(1, 1, headers.length, headers[0].length).setValues(headers);
   
   // ヘッダー行のスタイル設定
   sheet.getRange(1, 1, 1, headers[0].length).setBackground('#4285f4').setFontColor('#ffffff').setFontWeight('bold');
-  sheet.getRange(2, 1, 3, headers[0].length).setBackground('#e8f0fe');
+  sheet.getRange(2, 1, 4, headers[0].length).setBackground('#e8f0fe');  // カード表示設定
+  sheet.getRange(5, 1, 3, headers[0].length).setBackground('#fff3e0');  // 一覧表示設定
 }
 
 /**
@@ -129,6 +136,8 @@ function initializeSettingsSheet(sheet) {
     ['設定キー', '設定値', '説明'],
     ['speechRateEn', '1.0', '英語読み上げ速度 (0.5〜2.0)'],
     ['speechRateJa', '1.0', '日本語読み上げ速度 (0.5〜2.0)'],
+    ['listSpeechRateEn', '1.0', '一覧表示時の英語読み上げ速度 (0.5〜2.0)'],
+    ['listSpeechRateJa', '1.0', '一覧表示時の日本語読み上げ速度 (0.5〜2.0)'],
     ['waitTimeBetweenCards', '3', 'カード間の待機時間（秒）'],
     ['waitTimeAfterFlip', '2', 'めくり後の待機時間（秒）'],
     ['autoFlip', 'true', '読み上げ後に自動でめくるか'],
@@ -162,6 +171,9 @@ function getFields() {
   const displaySides = sheet.getRange(CARDS_HEADER_ROWS.DISPLAY_SIDE, 1, 1, lastCol).getValues()[0];
   const displayOrders = sheet.getRange(CARDS_HEADER_ROWS.DISPLAY_ORDER, 1, 1, lastCol).getValues()[0];
   const speechOrders = sheet.getRange(CARDS_HEADER_ROWS.SPEECH_ORDER, 1, 1, lastCol).getValues()[0];
+  const listSides = sheet.getRange(CARDS_HEADER_ROWS.LIST_SIDE, 1, 1, lastCol).getValues()[0];
+  const listOrders = sheet.getRange(CARDS_HEADER_ROWS.LIST_ORDER, 1, 1, lastCol).getValues()[0];
+  const listSpeechOrders = sheet.getRange(CARDS_HEADER_ROWS.LIST_SPEECH_ORDER, 1, 1, lastCol).getValues()[0];
   
   const fields = [];
   for (let i = 0; i < lastCol; i++) {
@@ -170,7 +182,10 @@ function getFields() {
       name: fieldNames[i],
       displaySide: displaySides[i],
       displayOrder: displayOrders[i],
-      speechOrder: speechOrders[i]
+      speechOrder: speechOrders[i],
+      listSide: listSides[i],
+      listOrder: listOrders[i],
+      listSpeechOrder: listSpeechOrders[i]
     });
   }
   
@@ -469,6 +484,32 @@ function calculateNextReviewDate(streak) {
 // ============================================
 // テスト用関数
 // ============================================
+
+/**
+ * カードデータと進捗を保存
+ * @param {number} rowNumber - カードの行番号
+ * @param {Object} fieldData - フィールドデータ
+ * @param {Object} progressData - 進捗データ
+ */
+function saveCardData(rowNumber, fieldData, progressData) {
+  const sheet = getOrCreateSheet(SHEET_NAMES.CARDS);
+  const fields = getFields();
+  
+  // 各フィールドを更新
+  for (const field of fields) {
+    if (fieldData.hasOwnProperty(field.name)) {
+      const colIndex = field.index + 1; // 1-indexed
+      sheet.getRange(rowNumber, colIndex).setValue(fieldData[field.name]);
+    }
+  }
+  
+  // 進捗も保存
+  if (progressData) {
+    saveProgress(rowNumber, progressData);
+  }
+  
+  return { success: true, rowNumber: rowNumber };
+}
 
 /**
  * 接続テスト

@@ -20,6 +20,7 @@ const AppState = {
   error: null,
   selectedDeck: null,
   todayStudyCount: 0,
+  editingCard: null,
   
   // 学習状態
   study: {
@@ -49,6 +50,8 @@ const ANIMATION_DURATION = {
 const DEFAULT_SETTINGS = {
   speechRateEn: 1.0,
   speechRateJa: 1.0,
+  listSpeechRateEn: 1.0,
+  listSpeechRateJa: 1.0,
   waitTimeAfterFlip: 0,
   waitTimeBetweenCards: 0,
   interval_1: 1,
@@ -137,6 +140,9 @@ const Stats = {
     Utils.setElementText('stat-total', stats.studied + ' / ' + stats.total);
     Utils.setElementText('stat-passed', stats.passed);
     Utils.setElementText('stat-review', stats.review);
+    // 今日のテストボタンに残り枚数を表示
+    const badge = document.getElementById('review-count-badge');
+    if (badge) badge.textContent = stats.review;
   }
 };
 
@@ -144,6 +150,9 @@ const Stats = {
 // 読み上げモジュール
 // ============================================
 const Speech = {
+  // 現在読み上げ中のカードRowNumber（一覧用）
+  currentListRowNumber: null,
+
   detectLanguage: function(fieldName, text) {
     const lowerName = fieldName.toLowerCase();
     if (lowerName.includes('英語') || lowerName.includes('english') || lowerName === 'en') return 'en-US';
@@ -153,42 +162,59 @@ const Speech = {
     return 'en-US';
   },
 
-  speak: function(text, lang, onEnd) {
+  speak: function(text, lang, onEnd, useListRate) {
     if (!('speechSynthesis' in window)) { if (onEnd) onEnd(); return; }
     
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = lang;
     
-    const rateKey = lang === 'en-US' ? 'speechRateEn' : 'speechRateJa';
+    // 一覧表示用の読み上げ速度を使用するかどうか
+    let rateKey;
+    if (useListRate) {
+      rateKey = lang === 'en-US' ? 'listSpeechRateEn' : 'listSpeechRateJa';
+    } else {
+      rateKey = lang === 'en-US' ? 'speechRateEn' : 'speechRateJa';
+    }
     utterance.rate = Math.max(0.1, Math.min(10, Utils.getSettingNumber(rateKey, DEFAULT_SETTINGS[rateKey])));
     
-    console.log('Speaking:', text, 'lang:', lang, 'rate:', utterance.rate);
+    console.log('Speaking:', text, 'lang:', lang, 'rate:', utterance.rate, 'useListRate:', useListRate);
     App.setSpeakingState(true);
     
-    utterance.onend = () => { if (onEnd) onEnd(); };
+    utterance.onend = () => { 
+      App.setSpeakingState(false);
+      this.currentListRowNumber = null;
+      App.updateListSpeakingState(null);
+      if (onEnd) onEnd(); 
+    };
     utterance.onerror = (e) => {
       if (e.error !== 'interrupted') console.error('Speech error:', e);
       App.setSpeakingState(false);
+      this.currentListRowNumber = null;
+      App.updateListSpeakingState(null);
       if (e.error !== 'interrupted' && onEnd) onEnd();
     };
     
     window.speechSynthesis.speak(utterance);
   },
 
-  speakSequence: function(items, index, onComplete) {
+  speakSequence: function(items, index, onComplete, useListRate) {
     if (index >= items.length) {
       App.setSpeakingState(false);
+      this.currentListRowNumber = null;
+      App.updateListSpeakingState(null);
       if (onComplete) onComplete();
       return;
     }
     const item = items[index];
-    this.speak(item.text, item.lang, () => this.speakSequence(items, index + 1, onComplete));
+    this.speak(item.text, item.lang, () => this.speakSequence(items, index + 1, onComplete, useListRate), useListRate);
   },
 
   stop: function() {
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     App.setSpeakingState(false);
+    this.currentListRowNumber = null;
+    App.updateListSpeakingState(null);
   }
 };
 
@@ -200,6 +226,13 @@ const CardRenderer = {
     return AppState.fields
       .filter(f => f.displaySide === side)
       .sort((a, b) => (parseInt(a.displayOrder) || 99) - (parseInt(b.displayOrder) || 99));
+  },
+
+  // 一覧表示用：listSide/listOrderを使用
+  getFieldsByListSide: function(side) {
+    return AppState.fields
+      .filter(f => f.listSide === side)
+      .sort((a, b) => (parseInt(a.listOrder) || 99) - (parseInt(b.listOrder) || 99));
   },
 
   renderFields: function(card, fields) {
@@ -494,8 +527,38 @@ const App = {
     this.showScreen('home-screen');
   },
 
-  // デッキ選択
-  showDeckSelect: function() { this.renderDeckTree(); this.updateSelectedDeckInfo(); this.showScreen('deck-screen'); },
+  // デッキ選択（学習設定画面内）
+  renderDeckTreeInline: function() {
+    const container = document.getElementById('deck-tree-inline');
+    if (!container) return;
+    const allSel = AppState.selectedDeck === null;
+    let html = '<div class="deck-item deck-all-item' + (allSel ? ' selected' : '') + '" onclick="App.selectDeckInline(null)">' +
+      '<span class="material-icons">folder_special</span><span class="deck-item-name">すべてのデッキ</span>' +
+      '<span class="deck-item-count">' + AppState.cards.length + '枚</span></div>';
+    html += this.renderDeckTreeNode(AppState.decks.tree, '');
+    container.innerHTML = html;
+  },
+
+  selectDeckInline: function(path) {
+    AppState.selectedDeck = path;
+    this.renderDeckTreeInline();
+    this.updateFilteredCardCount();
+  },
+
+  toggleSection: function(header) {
+    const content = header.nextElementSibling;
+    const icon = header.querySelector('.collapse-icon');
+    if (content.style.maxHeight) {
+      content.style.maxHeight = null;
+      icon.textContent = 'expand_more';
+    } else {
+      content.style.maxHeight = content.scrollHeight + 'px';
+      icon.textContent = 'expand_less';
+    }
+  },
+
+  // デッキ選択（旧画面 - 互換性のため残す）
+  showDeckSelect: function() { this.showStudySettings(); },
   closeDeckSelect: function() { this.showScreen('home-screen'); },
 
   renderDeckTree: function() {
@@ -519,7 +582,7 @@ const App = {
       const count = this.getCardCountForDeck(path);
       const sel = AppState.selectedDeck === path;
       
-      html += '<div class="deck-node"><div class="deck-item' + (sel ? ' selected' : '') + '" onclick="App.selectDeck(\'' + Utils.escapeHtml(path) + '\')">';
+      html += '<div class="deck-node"><div class="deck-item' + (sel ? ' selected' : '') + '" onclick="App.selectDeckInline(\'' + Utils.escapeHtml(path) + '\')">';
       if (hasChildren) html += '<button class="deck-toggle" onclick="event.stopPropagation(); App.toggleDeckNode(this)"><span class="material-icons">chevron_right</span></button>';
       else html += '<span style="width: 28px; display: inline-block;"></span>';
       html += '<span class="material-icons">folder</span><span class="deck-item-name">' + Utils.escapeHtml(key) + '</span><span class="deck-item-count">' + count + '枚</span></div>';
@@ -539,24 +602,21 @@ const App = {
     if (children) { const hidden = children.style.display === 'none'; children.style.display = hidden ? 'block' : 'none'; btn.classList.toggle('expanded', hidden); }
   },
 
-  selectDeck: function(path) { AppState.selectedDeck = path; this.renderDeckTree(); this.updateSelectedDeckInfo(); },
+  selectDeck: function(path) { AppState.selectedDeck = path; this.renderDeckTreeInline(); this.updateFilteredCardCount(); },
 
   updateSelectedDeckInfo: function() {
-    const name = document.getElementById('selected-deck-name');
-    const count = document.getElementById('selected-deck-count');
-    if (AppState.selectedDeck === null) { name.textContent = 'すべてのデッキ'; count.textContent = AppState.cards.length + '枚'; }
-    else { name.textContent = AppState.selectedDeck; count.textContent = this.getCardCountForDeck(AppState.selectedDeck) + '枚'; }
+    // 互換性のため残す（学習設定画面に統合されたため不要）
   },
 
   // 学習設定
   showStudySettings: function() {
-    document.getElementById('settings-deck-name').textContent = AppState.selectedDeck || 'すべてのデッキ';
     document.getElementById('word-start').value = '';
     document.getElementById('word-count').value = '';
     document.getElementById('filter-favorite').checked = false;
     document.getElementById('filter-not-passed').checked = false;
     document.getElementById('setting-shuffle').checked = true;
     document.querySelector('input[name="studyMode"][value="all"]').checked = true;
+    this.renderDeckTreeInline();
     this.setupStudySettingsListeners();
     this.updateFilteredCardCount();
     this.showScreen('study-settings-screen');
@@ -598,7 +658,310 @@ const App = {
     return cards;
   },
 
-  closeStudySettings: function() { this.showScreen('deck-screen'); },
+  closeStudySettings: function() { this.showScreen('home-screen'); },
+
+  // カード一覧
+  showCardList: function() {
+    this.populateDeckFilter();
+    this.renderCardList();
+    this.showScreen('card-list-screen');
+  },
+
+  closeCardList: function() { this.showScreen('home-screen'); },
+
+  populateDeckFilter: function() {
+    const select = document.getElementById('card-list-deck-filter');
+    let html = '<option value="">すべてのデッキ</option>';
+    AppState.decks.list.forEach(deck => {
+      html += '<option value="' + Utils.escapeHtml(deck) + '">' + Utils.escapeHtml(deck) + '</option>';
+    });
+    select.innerHTML = html;
+  },
+
+  filterCardList: function() { this.renderCardList(); },
+
+  renderCardList: function() {
+    const container = document.getElementById('card-list-container');
+    const searchTerm = (document.getElementById('card-search').value || '').toLowerCase();
+    const deckFilter = document.getElementById('card-list-deck-filter').value;
+    const sideFilter = document.getElementById('card-list-side-filter').value;
+    const favFilter = document.getElementById('card-list-fav-filter').value;
+    const passFilter = document.getElementById('card-list-pass-filter').value;
+    
+    let cards = [...AppState.cards];
+    
+    // デッキフィルター
+    if (deckFilter) {
+      cards = cards.filter(c => {
+        const d = c.fields['デッキ'] || '';
+        return d === deckFilter || d.startsWith(deckFilter + '/');
+      });
+    }
+    
+    // お気に入りフィルター
+    if (favFilter === 'fav') {
+      cards = cards.filter(c => {
+        const p = AppState.progress[c.rowNumber];
+        return p && p.favorite;
+      });
+    } else if (favFilter === 'not-fav') {
+      cards = cards.filter(c => {
+        const p = AppState.progress[c.rowNumber];
+        return !p || !p.favorite;
+      });
+    }
+    
+    // 合格フィルター
+    if (passFilter === 'passed') {
+      cards = cards.filter(c => {
+        const p = AppState.progress[c.rowNumber];
+        return p && p.passed;
+      });
+    } else if (passFilter === 'not-passed') {
+      cards = cards.filter(c => {
+        const p = AppState.progress[c.rowNumber];
+        return !p || !p.passed;
+      });
+    }
+    
+    // 検索フィルター
+    if (searchTerm) {
+      cards = cards.filter(c => {
+        for (const key in c.fields) {
+          if ((c.fields[key] || '').toLowerCase().includes(searchTerm)) return true;
+        }
+        return false;
+      });
+    }
+    
+    // 一覧表示用のフィールドを取得（listSide/listOrderを使用）
+    const leftFields = CardRenderer.getFieldsByListSide('左');
+    const rightFields = CardRenderer.getFieldsByListSide('右');
+    
+    // 表示モードに応じたクラスを決定
+    let itemClass = 'card-list-item';
+    if (sideFilter === 'front') itemClass += ' left-only';
+    else if (sideFilter === 'back') itemClass += ' right-only';
+    
+    let html = '';
+    cards.forEach(card => {
+      const prog = AppState.progress[card.rowNumber] || {};
+      const deck = card.fields['デッキ'] || '';
+      const rowNum = card.rowNumber;
+      
+      // 左側フィールド（クリックで読み上げ）
+      let leftHtml = '<div class="card-list-left" data-row="' + rowNum + '" onclick="App.speakCardInList(' + rowNum + ', event)">';
+      leftFields.forEach((field, i) => {
+        const val = card.fields[field.name] || '';
+        const cls = i === 0 ? 'field-main' : 'field-sub';
+        leftHtml += '<div class="' + cls + '">' + Utils.escapeHtml(val) + '</div>';
+      });
+      leftHtml += '</div>';
+      
+      // 右側フィールド
+      let rightHtml = '<div class="card-list-right">';
+      rightFields.forEach((field, i) => {
+        const val = card.fields[field.name] || '';
+        const cls = i === 0 ? 'field-main' : 'field-sub';
+        rightHtml += '<div class="' + cls + '">' + Utils.escapeHtml(val) + '</div>';
+      });
+      // デッキ名
+      if (deck) rightHtml += '<div class="deck-name">' + Utils.escapeHtml(deck) + '</div>';
+      rightHtml += '</div>';
+      
+      // アクションボタン
+      let actionsHtml = '<div class="card-list-actions">';
+      actionsHtml += '<button class="action-btn' + (prog.favorite ? ' favorite-active' : '') + '" onclick="App.toggleListFavorite(' + rowNum + ', event)" title="お気に入り"><span class="material-icons">' + (prog.favorite ? 'star' : 'star_border') + '</span></button>';
+      actionsHtml += '<button class="action-btn' + (prog.passed ? ' passed-active' : '') + '" onclick="App.toggleListPassed(' + rowNum + ', event)" title="合格"><span class="material-icons">' + (prog.passed ? 'check_circle' : 'check_circle_outline') + '</span></button>';
+      actionsHtml += '<button class="action-btn edit-btn" onclick="App.showCardEdit(' + rowNum + ', event)" title="編集"><span class="material-icons">edit</span></button>';
+      actionsHtml += '</div>';
+      
+      html += '<div class="' + itemClass + '" data-row="' + rowNum + '">';
+      html += leftHtml + rightHtml + actionsHtml;
+      html += '</div>';
+    });
+    
+    if (cards.length === 0) {
+      html = '<div class="card-list-empty"><span class="material-icons">search_off</span><p>カードが見つかりません</p></div>';
+    }
+    
+    container.innerHTML = html;
+  },
+
+  // 一覧からカードを読み上げ
+  speakCardInList: function(rowNumber, event) {
+    if (event) event.stopPropagation();
+    
+    // 既に同じカードを読み上げ中なら停止
+    if (Speech.currentListRowNumber === rowNumber) {
+      Speech.stop();
+      return;
+    }
+    
+    const card = AppState.cards.find(c => c.rowNumber === rowNumber);
+    if (!card) return;
+    
+    // 読み上げ対象フィールドを取得（listSpeechOrder使用）
+    const fields = AppState.fields
+      .filter(f => f.listSpeechOrder && f.listSpeechOrder !== '-' && f.listSpeechOrder !== '')
+      .sort((a, b) => (parseInt(a.listSpeechOrder) || 99) - (parseInt(b.listSpeechOrder) || 99));
+    
+    if (fields.length === 0) return;
+    
+    const items = fields.map(f => ({
+      text: card.fields[f.name] || '',
+      lang: Speech.detectLanguage(f.name, card.fields[f.name])
+    })).filter(i => i.text);
+    
+    if (items.length === 0) return;
+    
+    Speech.currentListRowNumber = rowNumber;
+    this.updateListSpeakingState(rowNumber);
+    Speech.speakSequence(items, 0, null, true); // useListRate = true
+  },
+
+  // 一覧の読み上げ状態を更新
+  updateListSpeakingState: function(rowNumber) {
+    // 全ての左側要素からspeakingクラスを削除
+    document.querySelectorAll('.card-list-left').forEach(el => {
+      el.classList.remove('speaking');
+    });
+    // 読み上げ中のカードにspeakingクラスを追加
+    if (rowNumber) {
+      const el = document.querySelector('.card-list-left[data-row="' + rowNumber + '"]');
+      if (el) el.classList.add('speaking');
+    }
+  },
+
+  // 一覧からお気に入りをトグル
+  toggleListFavorite: function(rowNumber, event) {
+    if (event) event.stopPropagation();
+    
+    let prog = AppState.progress[rowNumber] || { correctCount: 0, incorrectCount: 0, streak: 0, nextReviewDate: null, favorite: false, passed: false };
+    prog.favorite = !prog.favorite;
+    AppState.progress[rowNumber] = prog;
+    
+    // UIを更新
+    const item = document.querySelector('.card-list-item[data-row="' + rowNumber + '"]');
+    if (item) {
+      const btn = item.querySelector('.action-btn:first-child');
+      if (btn) {
+        btn.classList.toggle('favorite-active', prog.favorite);
+        btn.querySelector('.material-icons').textContent = prog.favorite ? 'star' : 'star_border';
+      }
+    }
+    
+    this.saveProgressToServer(rowNumber, prog);
+  },
+
+  // 一覧から合格をトグル
+  toggleListPassed: function(rowNumber, event) {
+    if (event) event.stopPropagation();
+    
+    let prog = AppState.progress[rowNumber] || { correctCount: 0, incorrectCount: 0, streak: 0, nextReviewDate: null, favorite: false, passed: false };
+    prog.passed = !prog.passed;
+    AppState.progress[rowNumber] = prog;
+    
+    // UIを更新
+    const item = document.querySelector('.card-list-item[data-row="' + rowNumber + '"]');
+    if (item) {
+      const btn = item.querySelectorAll('.action-btn')[1];
+      if (btn) {
+        btn.classList.toggle('passed-active', prog.passed);
+        btn.querySelector('.material-icons').textContent = prog.passed ? 'check_circle' : 'check_circle_outline';
+      }
+    }
+    
+    this.saveProgressToServer(rowNumber, prog);
+    Stats.updateHomeStats();
+  },
+
+  // カード編集
+  showCardEdit: function(rowNumber, event) {
+    if (event) event.stopPropagation();
+    
+    const card = AppState.cards.find(c => c.rowNumber === rowNumber);
+    if (!card) return;
+    
+    AppState.editingCard = card;
+    document.getElementById('card-edit-title').textContent = 'カード #' + (rowNumber - 7);
+    
+    const container = document.getElementById('card-edit-content');
+    let html = '';
+    
+    AppState.fields.forEach(field => {
+      const value = card.fields[field.name] || '';
+      const side = field.displaySide === '表' ? '表面' : (field.displaySide === '裏' ? '裏面' : '');
+      
+      html += '<div class="card-edit-field">';
+      html += '<label>' + Utils.escapeHtml(field.name);
+      if (side) html += ' <span class="field-side">(' + side + ')</span>';
+      html += '</label>';
+      html += '<textarea id="edit-field-' + Utils.escapeHtml(field.name) + '" data-field="' + Utils.escapeHtml(field.name) + '">' + Utils.escapeHtml(value) + '</textarea>';
+      html += '</div>';
+    });
+    
+    // 進捗情報表示
+    const prog = AppState.progress[rowNumber] || {};
+    html += '<div class="card-edit-progress">';
+    html += '<h3>学習進捗</h3>';
+    html += '<div class="progress-stats">';
+    html += '<span>正解: ' + (prog.correctCount || 0) + '</span>';
+    html += '<span>不正解: ' + (prog.incorrectCount || 0) + '</span>';
+    html += '<span>連続正解: ' + (prog.streak || 0) + '</span>';
+    html += '</div>';
+    html += '<div class="progress-toggles">';
+    html += '<label class="checkbox-item"><input type="checkbox" id="edit-favorite" ' + (prog.favorite ? 'checked' : '') + '><span class="checkbox-label"><span class="material-icons">star</span>お気に入り</span></label>';
+    html += '<label class="checkbox-item"><input type="checkbox" id="edit-passed" ' + (prog.passed ? 'checked' : '') + '><span class="checkbox-label"><span class="material-icons">check_circle</span>合格</span></label>';
+    html += '</div></div>';
+    
+    container.innerHTML = html;
+    this.showScreen('card-edit-screen');
+  },
+
+  closeCardEdit: function() {
+    AppState.editingCard = null;
+    this.showScreen('card-list-screen');
+  },
+
+  saveCard: function() {
+    if (!AppState.editingCard) return;
+    
+    const card = AppState.editingCard;
+    const rowNumber = card.rowNumber;
+    
+    // フィールド値を収集
+    const updatedFields = {};
+    AppState.fields.forEach(field => {
+      const textarea = document.getElementById('edit-field-' + field.name);
+      if (textarea) {
+        updatedFields[field.name] = textarea.value;
+      }
+    });
+    
+    // 進捗情報を更新
+    let prog = AppState.progress[rowNumber] || { correctCount: 0, incorrectCount: 0, streak: 0, nextReviewDate: null, favorite: false, passed: false };
+    prog.favorite = document.getElementById('edit-favorite').checked;
+    prog.passed = document.getElementById('edit-passed').checked;
+    
+    // ローカル状態を更新
+    card.fields = { ...card.fields, ...updatedFields };
+    AppState.progress[rowNumber] = prog;
+    
+    // サーバーに保存
+    google.script.run
+      .withSuccessHandler(() => {
+        console.log('Card saved');
+        alert('保存しました');
+        this.closeCardEdit();
+        this.renderCardList();
+      })
+      .withFailureHandler(e => {
+        console.error('Failed to save card:', e);
+        alert('保存に失敗しました: ' + e.message);
+      })
+      .saveCardData(rowNumber, updatedFields, prog);
+  },
 
   // 連続再生
   toggleAutoPlay: function() {
@@ -695,6 +1058,8 @@ const App = {
     
     const speechRateEn = Utils.getSettingNumber('speechRateEn', 1.0);
     const speechRateJa = Utils.getSettingNumber('speechRateJa', 1.0);
+    const listSpeechRateEn = Utils.getSettingNumber('listSpeechRateEn', 1.0);
+    const listSpeechRateJa = Utils.getSettingNumber('listSpeechRateJa', 1.0);
     const waitTimeAfterFlip = Utils.getSettingNumber('waitTimeAfterFlip', 0);
     const waitTimeBetweenCards = Utils.getSettingNumber('waitTimeBetweenCards', 0);
     
@@ -707,9 +1072,12 @@ const App = {
       '<div class="stat-row"><span>総不正解数</span><span>' + stats.totalIncorrect + '回</span></div>' +
       '<div class="stat-row"><span>今日の学習</span><span>' + AppState.todayStudyCount + '枚</span></div>' +
       '<div class="stat-row highlight"><span>正解率</span><span>' + stats.accuracy + '%</span></div></div></div>' +
-      '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">record_voice_over</span>読み上げ速度</h3>' +
+      '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">record_voice_over</span>学習中の読み上げ速度</h3>' +
       '<div class="setting-slider-row"><label>英語</label><input type="range" id="setting-speech-en" min="0.5" max="2" step="0.1" value="' + speechRateEn + '"><span id="setting-speech-en-val">' + speechRateEn + 'x</span></div>' +
       '<div class="setting-slider-row"><label>日本語</label><input type="range" id="setting-speech-ja" min="0.5" max="2" step="0.1" value="' + speechRateJa + '"><span id="setting-speech-ja-val">' + speechRateJa + 'x</span></div></div>' +
+      '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">list_alt</span>一覧表示の読み上げ速度</h3>' +
+      '<div class="setting-slider-row"><label>英語</label><input type="range" id="setting-list-speech-en" min="0.5" max="2" step="0.1" value="' + listSpeechRateEn + '"><span id="setting-list-speech-en-val">' + listSpeechRateEn + 'x</span></div>' +
+      '<div class="setting-slider-row"><label>日本語</label><input type="range" id="setting-list-speech-ja" min="0.5" max="2" step="0.1" value="' + listSpeechRateJa + '"><span id="setting-list-speech-ja-val">' + listSpeechRateJa + 'x</span></div></div>' +
       '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">timer</span>待機時間</h3>' +
       '<div class="setting-slider-row"><label>めくり後</label><input type="range" id="setting-wait-flip" min="0" max="5" step="0.5" value="' + waitTimeAfterFlip + '"><span id="setting-wait-flip-val">' + waitTimeAfterFlip + '秒</span></div>' +
       '<div class="setting-slider-row"><label>カード間</label><input type="range" id="setting-wait-card" min="0" max="5" step="0.5" value="' + waitTimeBetweenCards + '"><span id="setting-wait-card-val">' + waitTimeBetweenCards + '秒</span></div></div>' +
@@ -733,6 +1101,18 @@ const App = {
       const val = parseFloat(this.value);
       document.getElementById('setting-speech-ja-val').textContent = val + 'x';
       AppState.settings.speechRateJa = val;
+    });
+    // 一覧表示の読み上げ速度（英語）
+    document.getElementById('setting-list-speech-en').addEventListener('input', function() {
+      const val = parseFloat(this.value);
+      document.getElementById('setting-list-speech-en-val').textContent = val + 'x';
+      AppState.settings.listSpeechRateEn = val;
+    });
+    // 一覧表示の読み上げ速度（日本語）
+    document.getElementById('setting-list-speech-ja').addEventListener('input', function() {
+      const val = parseFloat(this.value);
+      document.getElementById('setting-list-speech-ja-val').textContent = val + 'x';
+      AppState.settings.listSpeechRateJa = val;
     });
     // 待機時間（めくり後）
     document.getElementById('setting-wait-flip').addEventListener('input', function() {

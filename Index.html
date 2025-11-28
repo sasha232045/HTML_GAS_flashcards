@@ -69,20 +69,17 @@
 
         <div class="action-buttons">
           <button class="btn btn-large btn-primary" onclick="App.startStudy('review')">
-            <span class="material-icons">replay</span>
-            今日の復習
+            <span class="material-icons">quiz</span>
+            今日のテスト
+            <span class="btn-badge" id="review-count-badge">0</span>
           </button>
-          <button class="btn btn-large btn-secondary" onclick="App.startStudy('new')">
-            <span class="material-icons">add_circle</span>
-            新規学習
+          <button class="btn btn-large btn-secondary" onclick="App.showStudySettings()">
+            <span class="material-icons">school</span>
+            学習モード
           </button>
-          <button class="btn btn-large btn-secondary" onclick="App.startStudy('all')">
-            <span class="material-icons">shuffle</span>
-            全体復習
-          </button>
-          <button class="btn btn-large btn-outline" onclick="App.showDeckSelect()">
-            <span class="material-icons">folder</span>
-            デッキ選択
+          <button class="btn btn-large btn-outline" onclick="App.showCardList()">
+            <span class="material-icons">list_alt</span>
+            カード一覧
           </button>
         </div>
 
@@ -201,40 +198,9 @@
         </div>
       </div>
 
-      <!-- デッキ選択画面 -->
-      <div id="deck-screen" class="screen">
-        <div class="deck-header">
-          <button class="btn btn-icon" onclick="App.closeDeckSelect()">
-            <span class="material-icons">arrow_back</span>
-          </button>
-          <h2>デッキ選択</h2>
-          <div style="width: 40px;"></div>
-        </div>
+      <!-- デッキ選択画面は学習設定に統合されました -->
 
-        <!-- 選択中のデッキ表示 -->
-        <div class="selected-deck-info">
-          <span class="material-icons">folder_open</span>
-          <span id="selected-deck-name">すべてのデッキ</span>
-          <span id="selected-deck-count" class="deck-count-badge">0枚</span>
-        </div>
-
-        <!-- デッキツリー -->
-        <div class="deck-tree-container">
-          <div class="deck-tree" id="deck-tree">
-            <!-- 動的に生成 -->
-          </div>
-        </div>
-
-        <!-- アクションボタン -->
-        <div class="deck-actions">
-          <button class="btn btn-primary btn-large" onclick="App.showStudySettings()">
-            <span class="material-icons">play_arrow</span>
-            学習設定へ
-          </button>
-        </div>
-      </div>
-
-      <!-- 学習設定画面 -->
+      <!-- 学習設定画面（デッキ選択統合版） -->
       <div id="study-settings-screen" class="screen">
         <div class="settings-header">
           <button class="btn btn-icon" onclick="App.closeStudySettings()">
@@ -244,13 +210,17 @@
           <div style="width: 40px;"></div>
         </div>
 
-        <!-- 選択中のデッキ -->
+        <!-- デッキ選択（折りたたみ式） -->
         <div class="setting-section">
-          <h3>選択中のデッキ</h3>
-          <div class="current-deck-display">
+          <h3 class="collapsible-header" onclick="App.toggleSection(this)">
             <span class="material-icons">folder</span>
-            <span id="settings-deck-name">すべてのデッキ</span>
-            <button class="btn btn-small btn-outline" onclick="App.showDeckSelect()">変更</button>
+            デッキ選択
+            <span class="collapse-icon material-icons">expand_more</span>
+          </h3>
+          <div class="collapsible-content">
+            <div class="deck-tree-inline" id="deck-tree-inline">
+              <!-- 動的に生成 -->
+            </div>
           </div>
         </div>
 
@@ -268,8 +238,8 @@
             <label class="radio-item">
               <input type="radio" name="studyMode" value="review">
               <span class="radio-label">
-                <span class="material-icons">replay</span>
-                今日の復習
+                <span class="material-icons">quiz</span>
+                今日のテスト
               </span>
             </label>
             <label class="radio-item">
@@ -348,6 +318,78 @@
             <span class="material-icons">play_arrow</span>
             学習開始
           </button>
+        </div>
+      </div>
+
+      <!-- カード一覧画面 -->
+      <div id="card-list-screen" class="screen">
+        <div class="settings-header">
+          <button class="btn btn-icon" onclick="App.closeCardList()">
+            <span class="material-icons">arrow_back</span>
+          </button>
+          <h2>カード一覧</h2>
+          <div style="width: 40px;"></div>
+        </div>
+
+        <!-- 検索・フィルター -->
+        <div class="card-list-filter">
+          <div class="search-box">
+            <span class="material-icons">search</span>
+            <input type="text" id="card-search" placeholder="検索..." oninput="App.filterCardList()">
+          </div>
+          <select id="card-list-deck-filter" onchange="App.filterCardList()">
+            <option value="">すべてのデッキ</option>
+          </select>
+        </div>
+        
+        <!-- フィルターオプション -->
+        <div class="card-list-filter-options">
+          <div class="filter-group">
+            <label>表示:</label>
+            <select id="card-list-side-filter" onchange="App.filterCardList()">
+              <option value="both">両方</option>
+              <option value="front">左（表）のみ</option>
+              <option value="back">右（裏）のみ</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>お気に入り:</label>
+            <select id="card-list-fav-filter" onchange="App.filterCardList()">
+              <option value="all">すべて</option>
+              <option value="fav">お気に入りのみ</option>
+              <option value="not-fav">お気に入り以外</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>合格:</label>
+            <select id="card-list-pass-filter" onchange="App.filterCardList()">
+              <option value="all">すべて</option>
+              <option value="passed">合格のみ</option>
+              <option value="not-passed">未合格のみ</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- カード一覧 -->
+        <div class="card-list-container" id="card-list-container">
+          <!-- 動的に生成 -->
+        </div>
+      </div>
+
+      <!-- カード編集画面 -->
+      <div id="card-edit-screen" class="screen">
+        <div class="settings-header">
+          <button class="btn btn-icon" onclick="App.closeCardEdit()">
+            <span class="material-icons">arrow_back</span>
+          </button>
+          <h2 id="card-edit-title">カード編集</h2>
+          <button class="btn btn-icon" onclick="App.saveCard()">
+            <span class="material-icons">save</span>
+          </button>
+        </div>
+
+        <div class="card-edit-content" id="card-edit-content">
+          <!-- 動的に生成 -->
         </div>
       </div>
     </main>
