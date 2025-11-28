@@ -476,8 +476,18 @@ const App = {
    */
   answerCard: function(isCorrect) {
     console.log('Answer:', isCorrect ? 'Correct' : 'Incorrect');
-    // ステップ5で実装: 進捗を更新してサーバーに保存
-    this.nextCard();
+    
+    // 視覚的フィードバック
+    const flashcard = document.getElementById('flashcard');
+    const animClass = isCorrect ? 'answer-correct' : 'answer-incorrect';
+    flashcard.classList.add(animClass);
+    
+    // アニメーション終了後に次のカードへ
+    setTimeout(() => {
+      flashcard.classList.remove(animClass);
+      // ステップ5で実装: 進捗を更新してサーバーに保存
+      this.nextCard();
+    }, 500);
   },
 
   /**
