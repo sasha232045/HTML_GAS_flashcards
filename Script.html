@@ -31,14 +31,27 @@ const AppState = {
     sessionAnswers: {},
     isSpeaking: false,
     isAutoPlay: false,
-    isRepeat: false
+    isRepeat: false,
+    // セッション統計
+    sessionStartTime: null,
+    sessionCorrect: 0,
+    sessionIncorrect: 0
   },
   
   // 一覧読み上げ状態
   listAutoPlay: false,
   listAutoPlayStopped: false,
   listRepeat: false,
-  listSpeechLangFilter: 'all' // 'all', 'en', 'ja'
+  listSpeechLangFilter: 'all', // 'all', 'en', 'ja'
+  
+  // カード一覧のカスタムフィルター
+  cardListFilterType: null,
+  
+  // スワイプ用
+  touchStartX: 0,
+  touchStartY: 0,
+  touchEndX: 0,
+  touchEndY: 0
 };
 
 // スプレッドシートURL
@@ -62,11 +75,17 @@ const DEFAULT_SETTINGS = {
   listWaitBetweenCards: 0.3,
   waitTimeAfterFlip: 0,
   waitTimeBetweenCards: 0,
+  newCardsPerDay: 20,
+  // SM-2アルゴリズム用デフォルト
   interval_1: 1,
   interval_2: 3,
   interval_3: 7,
   interval_4: 14,
-  interval_5: 30
+  interval_5: 30,
+  // 難易度別復習間隔の乗数
+  easyMultiplier: 1.5,
+  normalMultiplier: 1.0,
+  hardMultiplier: 0.5
 };
 
 // ============================================
@@ -122,11 +141,14 @@ const Stats = {
     const progress = AppState.progress;
     const today = Utils.getTodayString();
     
-    let studied = 0, passed = 0, review = 0;
+    let studied = 0, passed = 0, review = 0, newCards = 0;
     let totalCorrect = 0, totalIncorrect = 0;
     
     for (const card of cards) {
       const prog = progress[card.rowNumber];
+      if (!prog || (prog.correctCount === 0 && prog.incorrectCount === 0)) {
+        newCards++;
+      }
       if (!prog) continue;
       
       if (prog.correctCount > 0 || prog.incorrectCount > 0) studied++;
@@ -139,18 +161,24 @@ const Stats = {
     const totalAnswers = totalCorrect + totalIncorrect;
     const accuracy = totalAnswers > 0 ? Math.round((totalCorrect / totalAnswers) * 100) : 0;
     
-    return { total: cards.length, studied, passed, review, totalCorrect, totalIncorrect, accuracy };
+    return { total: cards.length, studied, passed, review, newCards, totalCorrect, totalIncorrect, accuracy };
   },
 
   updateHomeStats: function() {
     const stats = this.calculate();
+    const newCardsPerDay = Utils.getSettingNumber('newCardsPerDay', 20);
+    const todayNewCount = Math.min(stats.newCards, newCardsPerDay);
+    
     Utils.setElementText('stat-today', AppState.todayStudyCount);
     Utils.setElementText('stat-total', stats.studied + ' / ' + stats.total);
     Utils.setElementText('stat-passed', stats.passed);
     Utils.setElementText('stat-review', stats.review);
-    // 今日のテストボタンに残り枚数を表示
-    const badge = document.getElementById('review-count-badge');
-    if (badge) badge.textContent = stats.review;
+    // 今日の復習ボタンに残り枚数を表示
+    const reviewBadge = document.getElementById('review-count-badge');
+    if (reviewBadge) reviewBadge.textContent = stats.review;
+    // 新規学習ボタンに枚数を表示
+    const newBadge = document.getElementById('new-count-badge');
+    if (newBadge) newBadge.textContent = todayNewCount;
   }
 };
 
@@ -356,10 +384,14 @@ const App = {
         return p && p.nextReviewDate && p.nextReviewDate <= today && !p.passed;
       });
     } else if (mode === 'new') {
-      cards = AppState.cards.filter(c => {
+      // 新規カードのみ抽出
+      let newCards = AppState.cards.filter(c => {
         const p = AppState.progress[c.rowNumber];
         return !p || (p.correctCount === 0 && p.incorrectCount === 0);
       });
+      // 新規学習枚数で制限
+      const newCardsPerDay = Utils.getSettingNumber('newCardsPerDay', 20);
+      cards = newCards.slice(0, newCardsPerDay);
     } else {
       cards = [...AppState.cards];
     }
@@ -378,10 +410,135 @@ const App = {
   },
 
   initStudySession: function(mode, cards) {
-    AppState.study = { mode, cards, currentIndex: 0, isFlipped: false, sessionAnswers: {}, isSpeaking: false, isAutoPlay: false, isRepeat: false };
+    AppState.study = { 
+      mode, 
+      cards, 
+      currentIndex: 0, 
+      isFlipped: false, 
+      sessionAnswers: {}, 
+      isSpeaking: false, 
+      isAutoPlay: false, 
+      isRepeat: false,
+      sessionStartTime: new Date(),
+      sessionCorrect: 0,
+      sessionIncorrect: 0
+    };
     this.showScreen('study-screen');
     this.renderCard();
     this.updateStudyProgress();
+    this.setupKeyboardAndSwipe();
+  },
+
+  // キーボードとスワイプの設定
+  setupKeyboardAndSwipe: function() {
+    // キーボードイベント
+    document.removeEventListener('keydown', this.handleKeyDown);
+    this.handleKeyDown = (e) => {
+      // 学習画面でのみ有効
+      if (!document.getElementById('study-screen').classList.contains('active')) return;
+      
+      switch(e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (AppState.study.isFlipped) {
+            // 裏面なら表面に戻す
+            this.flipCard();
+          } else {
+            // 表面なら前のカードへ
+            this.prevCard();
+          }
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (!AppState.study.isFlipped) {
+            this.flipCard();
+          } else {
+            this.nextCard();
+          }
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          if (AppState.study.isFlipped) {
+            this.answerCard('easy');
+          }
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          if (AppState.study.isFlipped) {
+            this.answerCard('hard');
+          }
+          break;
+        case ' ':
+        case 'Enter':
+          e.preventDefault();
+          this.flipCard();
+          break;
+        case '1':
+          if (AppState.study.isFlipped) this.answerCard('hard');
+          break;
+        case '2':
+          if (AppState.study.isFlipped) this.answerCard('normal');
+          break;
+        case '3':
+          if (AppState.study.isFlipped) this.answerCard('easy');
+          break;
+      }
+    };
+    document.addEventListener('keydown', this.handleKeyDown);
+    
+    // スワイプイベント
+    const container = document.querySelector('.flashcard-container');
+    if (container) {
+      container.removeEventListener('touchstart', this.handleTouchStart);
+      container.removeEventListener('touchend', this.handleTouchEnd);
+      
+      this.handleTouchStart = (e) => {
+        AppState.touchStartX = e.changedTouches[0].screenX;
+        AppState.touchStartY = e.changedTouches[0].screenY;
+      };
+      
+      this.handleTouchEnd = (e) => {
+        AppState.touchEndX = e.changedTouches[0].screenX;
+        AppState.touchEndY = e.changedTouches[0].screenY;
+        this.handleSwipe();
+      };
+      
+      container.addEventListener('touchstart', this.handleTouchStart, { passive: true });
+      container.addEventListener('touchend', this.handleTouchEnd, { passive: true });
+    }
+  },
+
+  // スワイプ処理
+  handleSwipe: function() {
+    const diffX = AppState.touchEndX - AppState.touchStartX;
+    const diffY = AppState.touchEndY - AppState.touchStartY;
+    const threshold = 50; // スワイプと判定する最小距離
+    
+    // 水平方向のスワイプが垂直方向より大きい場合
+    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > threshold) {
+      if (diffX > 0) {
+        // 右スワイプ -> 前のカード
+        this.prevCard();
+      } else {
+        // 左スワイプ -> 次のカード
+        if (!AppState.study.isFlipped) {
+          this.flipCard();
+        } else {
+          this.nextCard();
+        }
+      }
+    } else if (Math.abs(diffY) > threshold && Math.abs(diffY) > Math.abs(diffX)) {
+      // 垂直方向のスワイプ
+      if (AppState.study.isFlipped) {
+        if (diffY < 0) {
+          // 上スワイプ -> 正解（簡単）
+          this.answerCard('easy');
+        } else {
+          // 下スワイプ -> 不正解（難しい）
+          this.answerCard('hard');
+        }
+      }
+    }
   },
 
   // カード表示
@@ -397,7 +554,13 @@ const App = {
     document.getElementById('answer-buttons').style.display = 'flex';
     this.updateCardButtons(card);
     this.updateNavButtons();
+    this.updateAnswerButtonState();
     this.prepareNextCard();
+    
+    // 継続読み上げモードなら読み上げる
+    if (AppState.study.isContinuousSpeech) {
+      setTimeout(() => this.speakCurrentSide(), 300);
+    }
   },
 
   updateCardContent: function() {
@@ -417,6 +580,33 @@ const App = {
   flipCard: function() {
     AppState.study.isFlipped = !AppState.study.isFlipped;
     document.getElementById('flashcard').classList.toggle('flipped', AppState.study.isFlipped);
+    
+    // 継続読み上げモードなら読み上げる
+    if (AppState.study.isContinuousSpeech && !AppState.study.isSpeaking) {
+      setTimeout(() => this.speakCurrentSide(), 300);
+    }
+    
+    // 回答ボタンの評価状態を更新
+    this.updateAnswerButtonState();
+  },
+  
+  // 回答ボタンの評価済み状態を更新
+  updateAnswerButtonState: function() {
+    const card = AppState.study.cards[AppState.study.currentIndex];
+    if (!card) return;
+    
+    const prog = AppState.progress[card.rowNumber];
+    const lastDifficulty = prog ? prog.lastDifficulty : null;
+    
+    // すべてのボタンからselectedクラスを削除
+    document.querySelectorAll('.btn-answer').forEach(btn => btn.classList.remove('selected'));
+    
+    // 最後に選択した難易度のボタンにselectedクラスを追加
+    if (lastDifficulty) {
+      const selector = '.btn-' + lastDifficulty;
+      const selectedBtn = document.querySelector(selector);
+      if (selectedBtn) selectedBtn.classList.add('selected');
+    }
   },
 
   updateStudyProgress: function() {
@@ -469,47 +659,133 @@ const App = {
     }, ANIMATION_DURATION.SLIDE);
   },
 
-  // 回答処理
-  answerCard: function(isCorrect) {
+  // 回答処理（難易度別: 'easy', 'normal', 'hard'）
+  answerCard: function(difficulty) {
     const card = AppState.study.cards[AppState.study.currentIndex];
     const row = card.rowNumber;
-    let prog = AppState.progress[row] || { correctCount: 0, incorrectCount: 0, streak: 0, nextReviewDate: null, favorite: false, passed: false };
+    let prog = AppState.progress[row] || { 
+      correctCount: 0, 
+      incorrectCount: 0, 
+      streak: 0, 
+      nextReviewDate: null, 
+      favorite: false, 
+      passed: false,
+      easeFactor: 2.5, // SM-2の初期値
+      interval: 1,
+      lastStudyDate: null,
+      lastDifficulty: null
+    };
     
+    // 今日の学習日と難易度を記録
+    prog.lastStudyDate = Utils.getTodayString();
+    prog.lastDifficulty = difficulty;
+    
+    // 前回の回答を取り消し
     const prev = AppState.study.sessionAnswers[row];
     if (prev) {
-      if (prev === 'correct') { prog.correctCount = Math.max(0, prog.correctCount - 1); prog.streak = Math.max(0, prog.streak - 1); }
-      else { prog.incorrectCount = Math.max(0, prog.incorrectCount - 1); }
+      if (prev.isCorrect) { 
+        prog.correctCount = Math.max(0, prog.correctCount - 1); 
+        prog.streak = Math.max(0, prog.streak - 1);
+        AppState.study.sessionCorrect = Math.max(0, AppState.study.sessionCorrect - 1);
+      } else { 
+        prog.incorrectCount = Math.max(0, prog.incorrectCount - 1);
+        AppState.study.sessionIncorrect = Math.max(0, AppState.study.sessionIncorrect - 1);
+      }
     }
     
-    if (isCorrect) { prog.correctCount++; prog.streak++; }
-    else { prog.incorrectCount++; prog.streak = 0; }
+    // 難易度による処理
+    const isCorrect = difficulty !== 'hard';
+    if (isCorrect) { 
+      prog.correctCount++; 
+      prog.streak++;
+      AppState.study.sessionCorrect++;
+    } else { 
+      prog.incorrectCount++; 
+      prog.streak = 0;
+      AppState.study.sessionIncorrect++;
+    }
     
     // 新規回答の場合のみ今日の学習数をカウント
     if (!prev) {
       AppState.todayStudyCount++;
     }
-    AppState.study.sessionAnswers[row] = isCorrect ? 'correct' : 'incorrect';
-    prog.nextReviewDate = this.calculateNextReviewDate(prog.streak);
+    AppState.study.sessionAnswers[row] = { isCorrect, difficulty };
+    
+    // SM-2アルゴリズムで次回復習日を計算
+    prog = this.calculateSM2(prog, difficulty);
     AppState.progress[row] = prog;
     this.saveProgressToServer(row, prog);
     
     const flashcard = document.getElementById('flashcard');
-    const anim = isCorrect ? 'answer-correct' : 'answer-incorrect';
+    // 難易度に応じたアニメーション
+    let anim;
+    switch(difficulty) {
+      case 'easy': anim = 'answer-correct'; break;
+      case 'normal': anim = 'answer-normal'; break;
+      case 'hard': anim = 'answer-incorrect'; break;
+      default: anim = 'answer-normal';
+    }
     flashcard.classList.add(anim);
     
+    // 評価ボタンの選択状態を更新
+    this.updateAnswerButtonState();
+    
     setTimeout(() => {
-      flashcard.classList.remove(anim);
+      flashcard.classList.remove('answer-correct', 'answer-normal', 'answer-incorrect');
       if (AppState.study.currentIndex < AppState.study.cards.length - 1) this.slideToCard(AppState.study.currentIndex + 1, 'next');
       else this.finishStudy();
     }, ANIMATION_DURATION.FEEDBACK);
   },
 
-  calculateNextReviewDate: function(streak) {
-    const intervals = [[5, 'interval_5'], [4, 'interval_4'], [3, 'interval_3'], [2, 'interval_2'], [1, 'interval_1']];
-    for (const [min, key] of intervals) {
-      if (streak >= min) return Utils.getDateAfterDays(Utils.getSettingNumber(key, DEFAULT_SETTINGS[key]));
+  // SM-2アルゴリズムによる復習日計算
+  calculateSM2: function(prog, difficulty) {
+    // SM-2のパラメータ
+    let easeFactor = prog.easeFactor || 2.5;
+    let interval = prog.interval || 1;
+    
+    // 難易度に応じたグレード（0-5）
+    let grade;
+    switch (difficulty) {
+      case 'easy': grade = 5; break;
+      case 'normal': grade = 3; break;
+      case 'hard': grade = 0; break;
+      default: grade = 3;
     }
-    return Utils.getDateAfterDays(1);
+    
+    // EaseFactor の更新
+    easeFactor = easeFactor + (0.1 - (5 - grade) * (0.08 + (5 - grade) * 0.02));
+    easeFactor = Math.max(1.3, easeFactor); // 最小値1.3
+    
+    // 次回間隔の計算
+    if (grade < 3) {
+      // 不正解の場合は最初からやり直し
+      interval = 1;
+    } else {
+      // 正解の場合
+      if (interval === 1) {
+        interval = 1;
+      } else if (interval === 2) {
+        interval = 6;
+      } else {
+        interval = Math.round(interval * easeFactor);
+      }
+      
+      // 難易度による調整
+      const multiplier = Utils.getSettingNumber(
+        difficulty === 'easy' ? 'easyMultiplier' : (difficulty === 'hard' ? 'hardMultiplier' : 'normalMultiplier'),
+        DEFAULT_SETTINGS[difficulty === 'easy' ? 'easyMultiplier' : (difficulty === 'hard' ? 'hardMultiplier' : 'normalMultiplier')]
+      );
+      interval = Math.round(interval * multiplier);
+    }
+    
+    // 最大90日に制限
+    interval = Math.min(90, Math.max(1, interval));
+    
+    prog.easeFactor = easeFactor;
+    prog.interval = interval;
+    prog.nextReviewDate = Utils.getDateAfterDays(interval);
+    
+    return prog;
   },
 
   saveProgressToServer: function(row, data) {
@@ -534,11 +810,110 @@ const App = {
     this.saveProgressToServer(card.rowNumber, prog);
   },
 
-  finishStudy: function() { alert('学習完了！'); this.exitStudy(); },
+  finishStudy: function() { 
+    // セッション統計を計算
+    const endTime = new Date();
+    const startTime = AppState.study.sessionStartTime || endTime;
+    const durationMs = endTime - startTime;
+    const durationSec = Math.floor(durationMs / 1000);
+    const minutes = Math.floor(durationSec / 60);
+    const seconds = durationSec % 60;
+    
+    const correct = AppState.study.sessionCorrect;
+    const incorrect = AppState.study.sessionIncorrect;
+    const total = correct + incorrect;
+    const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
+    
+    // モーダルで統計を表示
+    this.showSessionResultModal(correct, incorrect, accuracy, minutes, seconds);
+  },
+  
+  showSessionResultModal: function(correct, incorrect, accuracy, minutes, seconds) {
+    // 既存のモーダルを削除
+    const existingModal = document.getElementById('session-result-modal');
+    if (existingModal) existingModal.remove();
+    
+    const total = correct + incorrect;
+    const accuracyColor = accuracy >= 80 ? '#34a853' : (accuracy >= 50 ? '#fbbc04' : '#ea4335');
+    
+    const modalHtml = `
+      <div id="session-result-modal" class="modal-overlay">
+        <div class="modal-content session-result">
+          <div class="result-header">
+            <span class="result-emoji">🎉</span>
+            <h2>学習完了！</h2>
+          </div>
+          <div class="result-chart">
+            <svg viewBox="0 0 100 100" class="accuracy-ring">
+              <circle cx="50" cy="50" r="40" fill="none" stroke="#e0e0e0" stroke-width="10"/>
+              <circle cx="50" cy="50" r="40" fill="none" stroke="${accuracyColor}" stroke-width="10" 
+                stroke-dasharray="${accuracy * 2.51} 251" stroke-linecap="round" 
+                transform="rotate(-90 50 50)" class="progress-ring"/>
+            </svg>
+            <div class="accuracy-value">${accuracy}%</div>
+          </div>
+          <div class="result-stats">
+            <div class="result-stat correct">
+              <span class="material-icons">check_circle</span>
+              <span class="stat-number">${correct}</span>
+              <span class="stat-label">正解</span>
+            </div>
+            <div class="result-stat incorrect">
+              <span class="material-icons">cancel</span>
+              <span class="stat-number">${incorrect}</span>
+              <span class="stat-label">不正解</span>
+            </div>
+            <div class="result-stat time">
+              <span class="material-icons">timer</span>
+              <span class="stat-number">${minutes}:${seconds.toString().padStart(2, '0')}</span>
+              <span class="stat-label">所要時間</span>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-large" onclick="App.closeResultAndExit()">
+            <span class="material-icons">home</span>
+            ホームに戻る
+          </button>
+        </div>
+      </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    
+    // アニメーションのために少し遅延
+    setTimeout(() => {
+      document.getElementById('session-result-modal').classList.add('show');
+    }, 50);
+  },
+  
+  closeResultAndExit: function() {
+    const modal = document.getElementById('session-result-modal');
+    if (modal) {
+      modal.classList.remove('show');
+      setTimeout(() => modal.remove(), 300);
+    }
+    this.exitStudy();
+  },
 
   exitStudy: function() {
     Speech.stop();
-    AppState.study = { mode: null, cards: [], currentIndex: 0, isFlipped: false, sessionAnswers: {}, isSpeaking: false, isAutoPlay: false, isRepeat: false };
+    // キーボードイベントを削除
+    if (this.handleKeyDown) {
+      document.removeEventListener('keydown', this.handleKeyDown);
+    }
+    AppState.study = { 
+      mode: null, 
+      cards: [], 
+      currentIndex: 0, 
+      isFlipped: false, 
+      sessionAnswers: {}, 
+      isSpeaking: false, 
+      isAutoPlay: false, 
+      isRepeat: false,
+      isContinuousSpeech: false,
+      sessionStartTime: null,
+      sessionCorrect: 0,
+      sessionIncorrect: 0
+    };
     Stats.updateHomeStats();
     this.showScreen('home-screen');
   },
@@ -683,6 +1058,56 @@ const App = {
     this.showScreen('card-list-screen');
   },
 
+  // 今日学習したカードを表示
+  showTodayStudiedCards: function() {
+    this.populateDeckFilter();
+    this.showScreen('card-list-screen');
+    
+    // フィルターをリセット
+    document.getElementById('card-search').value = '';
+    document.getElementById('card-list-deck-filter').value = '';
+    document.getElementById('card-list-side-filter').value = 'both';
+    document.getElementById('card-list-fav-filter').value = '';
+    document.getElementById('card-list-pass-filter').value = '';
+    
+    // 今日学習したカード（セッション回答があるカード）
+    AppState.cardListFilterType = 'today';
+    
+    this.renderCardList();
+  },
+
+  // 弱点カード（間違いが多いカード）を学習
+  startWeakPointStudy: function() {
+    // 不正解率が高いカードを抽出
+    let weakCards = AppState.cards.filter(c => {
+      const p = AppState.progress[c.rowNumber];
+      if (!p) return false;
+      const total = (p.correctCount || 0) + (p.incorrectCount || 0);
+      if (total < 2) return false; // 最低2回以上回答したカード
+      const incorrectRate = (p.incorrectCount || 0) / total;
+      return incorrectRate >= 0.3; // 不正解率30%以上
+    });
+    
+    // 不正解率でソート（高い順）
+    weakCards.sort((a, b) => {
+      const pA = AppState.progress[a.rowNumber];
+      const pB = AppState.progress[b.rowNumber];
+      const rateA = (pA.incorrectCount || 0) / ((pA.correctCount || 0) + (pA.incorrectCount || 0));
+      const rateB = (pB.incorrectCount || 0) / ((pB.correctCount || 0) + (pB.incorrectCount || 0));
+      return rateB - rateA;
+    });
+    
+    // 最大20枚に制限
+    weakCards = weakCards.slice(0, 20);
+    
+    if (weakCards.length === 0) {
+      alert('弱点カードが見つかりません。\nもう少し学習を進めてからお試しください。');
+      return;
+    }
+    
+    this.initStudySession('weak', weakCards);
+  },
+
   // フィルター付きカード一覧表示（設定画面の統計からの遷移用）
   showCardListWithFilter: function(filterType) {
     // まず一覧画面に遷移
@@ -735,7 +1160,13 @@ const App = {
     // 統計画面からのカスタムフィルター
     const customFilter = AppState.cardListFilterType;
     if (customFilter) {
-      if (customFilter === 'studied') {
+      if (customFilter === 'today') {
+        // 今日学習したカード（lastStudyDateが今日のカード）
+        cards = cards.filter(c => {
+          const p = AppState.progress[c.rowNumber];
+          return p && p.lastStudyDate === today;
+        });
+      } else if (customFilter === 'studied') {
         // 学習済み：正解または不正解が1回以上
         cards = cards.filter(c => {
           const p = AppState.progress[c.rowNumber];
@@ -855,15 +1286,12 @@ const App = {
     container.innerHTML = html;
   },
 
-  // 一覧からカードを読み上げ
+  // 一覧からカードを読み上げ（タップで常に最初から再生）
   speakCardInList: function(rowNumber, event) {
     if (event) event.stopPropagation();
     
-    // 既に同じカードを読み上げ中なら停止
-    if (Speech.currentListRowNumber === rowNumber) {
-      Speech.stop();
-      return;
-    }
+    // 読み上げ中なら即座に停止して新たに再生
+    Speech.stop();
     
     const card = AppState.cards.find(c => c.rowNumber === rowNumber);
     if (!card) return;
@@ -989,6 +1417,8 @@ const App = {
     const autoPlayBtn = document.getElementById('list-autoplay-btn');
     const repeatBtn = document.getElementById('list-repeat-btn');
     const langSelect = document.getElementById('list-speech-lang');
+    const speedSlider = document.getElementById('list-speed-slider');
+    const speedValue = document.getElementById('list-speed-value');
     
     if (autoPlayBtn) {
       autoPlayBtn.classList.toggle('active', AppState.listAutoPlay);
@@ -1000,6 +1430,22 @@ const App = {
     if (langSelect) {
       langSelect.value = AppState.listSpeechLangFilter || 'all';
     }
+    // 速度スライダーの初期化
+    if (speedSlider && speedValue) {
+      const currentSpeed = Utils.getSettingNumber('listSpeechRateEn', 1.0);
+      speedSlider.value = currentSpeed;
+      speedValue.textContent = currentSpeed + 'x';
+    }
+  },
+
+  // 一覧の再生速度を更新
+  updateListSpeed: function(value) {
+    const speed = parseFloat(value);
+    const speedValue = document.getElementById('list-speed-value');
+    if (speedValue) speedValue.textContent = speed + 'x';
+    // 英語と日本語の両方に適用
+    AppState.settings.listSpeechRateEn = speed;
+    AppState.settings.listSpeechRateJa = speed;
   },
 
   // 一覧の読み上げ状態を更新
@@ -1218,8 +1664,26 @@ const App = {
     }, ANIMATION_DURATION.SLIDE);
   },
 
-  // 読み上げ
-  speakCurrentCard: function() { if (AppState.study.isSpeaking) { Speech.stop(); return; } this.speakCurrentSide(); },
+  // 読み上げ（継続モード切り替え）
+  speakCurrentCard: function() { 
+    if (AppState.study.isSpeaking) { 
+      Speech.stop(); 
+      return; 
+    }
+    // 継続読み上げモードをトグル
+    AppState.study.isContinuousSpeech = !AppState.study.isContinuousSpeech;
+    this.updateSpeechButton();
+    if (AppState.study.isContinuousSpeech) {
+      this.speakCurrentSide();
+    }
+  },
+  
+  updateSpeechButton: function() {
+    const btn = document.getElementById('btn-speech');
+    if (btn) {
+      btn.classList.toggle('autoplay-active', AppState.study.isContinuousSpeech);
+    }
+  },
 
   // 読み上げ順序が有効な数値かどうかを判定
   isValidSpeechOrder: function(value) {
@@ -1264,6 +1728,7 @@ const App = {
     const listWaitBetweenCards = Utils.getSettingNumber('listWaitBetweenCards', 0.3);
     const waitTimeAfterFlip = Utils.getSettingNumber('waitTimeAfterFlip', 0);
     const waitTimeBetweenCards = Utils.getSettingNumber('waitTimeBetweenCards', 0);
+    const newCardsPerDay = Utils.getSettingNumber('newCardsPerDay', 20);
     
     container.innerHTML = '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">bar_chart</span>学習統計</h3><div class="stats-detail">' +
       '<div class="stat-row stat-clickable" onclick="App.showCardListWithFilter(\'all\')"><span>総カード数</span><span>' + stats.total + '枚</span></div>' +
@@ -1274,6 +1739,8 @@ const App = {
       '<div class="stat-row"><span>総不正解数</span><span>' + stats.totalIncorrect + '回</span></div>' +
       '<div class="stat-row"><span>今日の学習</span><span>' + AppState.todayStudyCount + '枚</span></div>' +
       '<div class="stat-row highlight"><span>正解率</span><span>' + stats.accuracy + '%</span></div></div></div>' +
+      '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">add_circle</span>新規学習</h3>' +
+      '<div class="setting-slider-row"><label>1日の枚数</label><input type="range" id="setting-new-cards" min="5" max="100" step="5" value="' + newCardsPerDay + '"><span id="setting-new-cards-val">' + newCardsPerDay + '枚</span></div></div>' +
       '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">record_voice_over</span>学習モードの設定</h3>' +
       '<div class="setting-slider-row"><label>英語速度</label><input type="range" id="setting-speech-en" min="0.5" max="2" step="0.1" value="' + speechRateEn + '"><span id="setting-speech-en-val">' + speechRateEn + 'x</span></div>' +
       '<div class="setting-slider-row"><label>日本語速度</label><input type="range" id="setting-speech-ja" min="0.5" max="2" step="0.1" value="' + speechRateJa + '"><span id="setting-speech-ja-val">' + speechRateJa + 'x</span></div>' +
@@ -1301,6 +1768,17 @@ const App = {
         .withFailureHandler(e => console.error('Failed to save setting:', e))
         .saveSetting(key, value);
     }
+    
+    // 新規学習枚数
+    document.getElementById('setting-new-cards').addEventListener('input', function() {
+      const val = parseInt(this.value);
+      document.getElementById('setting-new-cards-val').textContent = val + '枚';
+      AppState.settings.newCardsPerDay = val;
+    });
+    document.getElementById('setting-new-cards').addEventListener('change', function() {
+      saveSettingToServer('newCardsPerDay', parseInt(this.value));
+      Stats.updateHomeStats();
+    });
     
     // 読み上げ速度（英語）
     document.getElementById('setting-speech-en').addEventListener('input', function() {

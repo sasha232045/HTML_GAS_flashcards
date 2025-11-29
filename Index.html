@@ -44,22 +44,22 @@
         <div class="stats-summary">
           <h2>学習状況</h2>
           <div class="stats-grid">
-            <div class="stat-card">
+            <div class="stat-card stat-clickable" onclick="App.showTodayStudiedCards()">
               <span class="material-icons">today</span>
               <div class="stat-value" id="stat-today">0</div>
               <div class="stat-label">今日の学習</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-clickable" onclick="App.showCardListWithFilter('all')">
               <span class="material-icons">library_books</span>
               <div class="stat-value" id="stat-total">0 / 0</div>
               <div class="stat-label">学習済み / 全体</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-clickable" onclick="App.showCardListWithFilter('passed')">
               <span class="material-icons">check_circle</span>
               <div class="stat-value" id="stat-passed">0</div>
               <div class="stat-label">合格</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-clickable" onclick="App.showCardListWithFilter('review')">
               <span class="material-icons">schedule</span>
               <div class="stat-value" id="stat-review">0</div>
               <div class="stat-label">復習待ち</div>
@@ -68,12 +68,21 @@
         </div>
 
         <div class="action-buttons">
+          <button class="btn btn-large btn-secondary" onclick="App.startStudy('new')">
+            <span class="material-icons">add_circle</span>
+            新規学習
+            <span class="btn-badge" id="new-count-badge">0</span>
+          </button>
           <button class="btn btn-large btn-primary" onclick="App.startStudy('review')">
             <span class="material-icons">quiz</span>
-            今日のテスト
+            今日の復習
             <span class="btn-badge" id="review-count-badge">0</span>
           </button>
-          <button class="btn btn-large btn-secondary" onclick="App.showStudySettings()">
+          <button class="btn btn-large btn-outline" onclick="App.startWeakPointStudy()">
+            <span class="material-icons">psychology</span>
+            弱点カード
+          </button>
+          <button class="btn btn-large btn-outline" onclick="App.showStudySettings()">
             <span class="material-icons">school</span>
             学習モード
           </button>
@@ -161,13 +170,17 @@
 
         <!-- 回答ボタン（裏面表示時のみ） -->
         <div class="answer-buttons" id="answer-buttons" style="display: none;">
-          <button class="btn btn-answer btn-incorrect" onclick="App.answerCard(false)">
-            <span class="material-icons">close</span>
-            不正解
+          <button class="btn btn-answer btn-hard" onclick="App.answerCard('hard')">
+            <span class="material-icons">sentiment_very_dissatisfied</span>
+            難しい
           </button>
-          <button class="btn btn-answer btn-correct" onclick="App.answerCard(true)">
-            <span class="material-icons">check</span>
-            正解
+          <button class="btn btn-answer btn-normal" onclick="App.answerCard('normal')">
+            <span class="material-icons">sentiment_neutral</span>
+            普通
+          </button>
+          <button class="btn btn-answer btn-easy" onclick="App.answerCard('easy')">
+            <span class="material-icons">sentiment_very_satisfied</span>
+            簡単
           </button>
         </div>
 
@@ -239,7 +252,7 @@
               <input type="radio" name="studyMode" value="review">
               <span class="radio-label">
                 <span class="material-icons">quiz</span>
-                今日のテスト
+                今日の復習
               </span>
             </label>
             <label class="radio-item">
@@ -379,6 +392,11 @@
             <button class="btn btn-icon speech-control-btn" id="list-repeat-btn" onclick="App.toggleListRepeat()" title="リピート">
               <span class="material-icons">repeat</span>
             </button>
+          </div>
+          <div class="speech-speed-group">
+            <input type="range" id="list-speed-slider" min="0.5" max="2" step="0.1" value="1.0" 
+                   oninput="App.updateListSpeed(this.value)" title="再生速度">
+            <span id="list-speed-value">1.0x</span>
           </div>
           <div class="speech-lang-group">
             <label>読み上げ:</label>
