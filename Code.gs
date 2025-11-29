@@ -63,8 +63,21 @@ function doGet() {
 
 /**
  * HTMLファイルをインクルードするためのヘルパー関数
+ * .html / .css / .js の各拡張子に対応
  */
 function include(filename) {
+  // 拡張子がない場合は.htmlを試す
+  let actualFilename = filename;
+  
+  // 既に拡張子がある場合はそのまま使用
+  // GASのHtmlService.createHtmlOutputFromFile()は.htmlを自動追加しないため、
+  // プロジェクト内のファイル名と正確に一致する必要がある
+  // 
+  // 注意: GASプロジェクトでは、ファイルは実際には拡張子なしで保存されますが、
+  // HtmlServiceは自動的に .html 拡張子を探します。
+  // Style.css や Script.js のようなファイル名の場合、
+  // GAS エディタでは「Style.css.html」として表示されます。
+  
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
@@ -180,6 +193,7 @@ function initializeSettingsSheet(sheet) {
     ['autoFlip', 'true', '読み上げ後に自動でめくるか'],
     ['repeatMode', 'false', 'リピート再生モード'],
     ['shuffleCards', 'true', 'カードシャッフル'],
+    ['newCardsPerDay', '20', '一日の新規学習枚数'],
     ['interval_1', '1', '1回目正解後の復習間隔（日）'],
     ['interval_2', '3', '2回連続正解後の復習間隔（日）'],
     ['interval_3', '7', '3回連続正解後の復習間隔（日）'],

@@ -931,3 +931,29 @@ const AppState = {
 ---
 
 *本仕様書は開発の基準となるドキュメントです。変更がある場合は本仕様書を更新してください。*
+
+
+
+# ファイル構成変更
+📁 HTML_GAS_flashcards
+├── Code.gs                 # GAS専用（変更なし）
+├── index.html              # メインHTML（共通）
+├── style.css               # CSS（.htmlから変更）
+├── script.js               # JavaScript（.htmlから変更）
+├── data-adapter.js         # 🆕 データアダプター（モード切替の核心）
+├── cards.csv               # ローカル用カードデータ
+├── settings.csv            # ローカル用設定データ
+├── SPECIFICATION.md
+├── README.md
+└── 開発ステップ計画.md
+
+
+## モード切替の仕組み
+`data-adapter.js`
+// ============================================
+// モード設定 - この1行を切り替えるだけ！
+// ============================================
+const APP_MODE = 'LOCAL';  // 'GAS' または 'LOCAL'
+
+// データアダプター - 共通インターフェース
+const DataAdapter = APP_MODE === 'GAS' ? GASAdapter : LocalAdapter;

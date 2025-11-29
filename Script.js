@@ -1,4 +1,3 @@
-<script>
 /**
  * GAS フラッシュカード - クライアントサイドJavaScript
  * リファクタリング版 + ステップ8: 統計表示
@@ -78,13 +77,20 @@ const COLORS = {
 const DEFAULT_SETTINGS = {
   speechRateEn: 1.0,
   speechRateJa: 1.0,
+  speechVolumeEn: 1.0,
+  speechVolumeJa: 1.0,
   listSpeechRateEn: 1.0,
   listSpeechRateJa: 1.0,
+  listSpeechVolumeEn: 1.0,
+  listSpeechVolumeJa: 1.0,
   listWaitBetweenFields: 0,
   listWaitBetweenCards: 0.3,
   waitTimeAfterFlip: 0,
   waitTimeBetweenCards: 0,
   newCardsPerDay: 20,
+  // 表・裏読み上げ設定（true=読み上げる）
+  speakFront: true,
+  speakBack: true,
   // SM-2アルゴリズム用デフォルト
   interval_1: 1,
   interval_2: 3,
@@ -214,16 +220,19 @@ const Speech = {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = lang;
     
-    // 一覧表示用の読み上げ速度を使用するかどうか
-    let rateKey;
+    // 一覧表示用の読み上げ速度・音量を使用するかどうか
+    let rateKey, volumeKey;
     if (useListRate) {
       rateKey = lang === 'en-US' ? 'listSpeechRateEn' : 'listSpeechRateJa';
+      volumeKey = lang === 'en-US' ? 'listSpeechVolumeEn' : 'listSpeechVolumeJa';
     } else {
       rateKey = lang === 'en-US' ? 'speechRateEn' : 'speechRateJa';
+      volumeKey = lang === 'en-US' ? 'speechVolumeEn' : 'speechVolumeJa';
     }
     utterance.rate = Math.max(0.1, Math.min(10, Utils.getSettingNumber(rateKey, DEFAULT_SETTINGS[rateKey])));
+    utterance.volume = Math.max(0, Math.min(1, Utils.getSettingNumber(volumeKey, DEFAULT_SETTINGS[volumeKey])));
     
-    console.log('Speaking:', text, 'lang:', lang, 'rate:', utterance.rate, 'useListRate:', useListRate);
+    console.log('Speaking:', text, 'lang:', lang, 'rate:', utterance.rate, 'volume:', utterance.volume);
     App.setSpeakingState(true);
     
     utterance.onend = () => { 
@@ -326,10 +335,17 @@ const App = {
 
   loadInitialData: function() {
     this.showScreen('loading-screen');
-    google.script.run
-      .withSuccessHandler(this.onDataLoaded.bind(this))
-      .withFailureHandler(this.onDataError.bind(this))
-      .getInitialData();
+    
+    // DataAdapterを使用（GAS/ローカル両対応）
+    const loadData = async () => {
+      try {
+        const data = await DataAdapter.getInitialData();
+        this.onDataLoaded(data);
+      } catch (error) {
+        this.onDataError(error);
+      }
+    };
+    loadData();
   },
 
   onDataLoaded: function(data) {
@@ -823,8 +839,13 @@ const App = {
     return prog;
   },
 
-  saveProgressToServer: function(row, data) {
-    google.script.run.withSuccessHandler(() => console.log('Progress saved')).withFailureHandler(e => console.error('Failed:', e)).saveProgress(row, data);
+  saveProgressToServer: async function(row, data) {
+    try {
+      await DataAdapter.saveProgress(row, data);
+      console.log('Progress saved');
+    } catch (e) {
+      console.error('Failed:', e);
+    }
   },
 
   toggleFavorite: function() {
@@ -1622,19 +1643,20 @@ const App = {
     card.fields = { ...card.fields, ...updatedFields };
     AppState.progress[rowNumber] = prog;
     
-    // サーバーに保存
-    google.script.run
-      .withSuccessHandler(() => {
+    // サーバーに保存（DataAdapter経由）
+    const saveToServer = async () => {
+      try {
+        await DataAdapter.saveCardData(rowNumber, updatedFields, prog);
         console.log('Card saved');
         alert('保存しました');
         this.closeCardEdit();
         this.renderCardList();
-      })
-      .withFailureHandler(e => {
+      } catch (e) {
         console.error('Failed to save card:', e);
         alert('保存に失敗しました: ' + e.message);
-      })
-      .saveCardData(rowNumber, updatedFields, prog);
+      }
+    };
+    saveToServer();
   },
 
   // 連続再生
@@ -1730,7 +1752,20 @@ const App = {
   speakCurrentSide: function(onComplete) {
     const card = AppState.study.cards[AppState.study.currentIndex];
     if (!card) { if (onComplete) onComplete(); return; }
+    
     const side = AppState.study.isFlipped ? '裏' : '表';
+    
+    // 表・裏の読み上げ設定を確認
+    const speakFront = AppState.settings.speakFront !== false; // デフォルトtrue
+    const speakBack = AppState.settings.speakBack !== false;   // デフォルトtrue
+    
+    // 現在の面の読み上げが無効な場合はスキップ
+    if ((side === '表' && !speakFront) || (side === '裏' && !speakBack)) {
+      console.log('Speech disabled for side:', side);
+      if (onComplete) onComplete();
+      return;
+    }
+    
     const fields = AppState.fields.filter(f => f.displaySide === side && this.isValidSpeechOrder(f.speechOrder))
       .sort((a, b) => (parseInt(a.speechOrder) || 99) - (parseInt(b.speechOrder) || 99));
     if (fields.length === 0) { if (onComplete) onComplete(); return; }
@@ -1757,13 +1792,19 @@ const App = {
     
     const speechRateEn = Utils.getSettingNumber('speechRateEn', 1.0);
     const speechRateJa = Utils.getSettingNumber('speechRateJa', 1.0);
+    const speechVolumeEn = Utils.getSettingNumber('speechVolumeEn', 1.0);
+    const speechVolumeJa = Utils.getSettingNumber('speechVolumeJa', 1.0);
     const listSpeechRateEn = Utils.getSettingNumber('listSpeechRateEn', 1.0);
     const listSpeechRateJa = Utils.getSettingNumber('listSpeechRateJa', 1.0);
+    const listSpeechVolumeEn = Utils.getSettingNumber('listSpeechVolumeEn', 1.0);
+    const listSpeechVolumeJa = Utils.getSettingNumber('listSpeechVolumeJa', 1.0);
     const listWaitBetweenFields = Utils.getSettingNumber('listWaitBetweenFields', 0);
     const listWaitBetweenCards = Utils.getSettingNumber('listWaitBetweenCards', 0.3);
     const waitTimeAfterFlip = Utils.getSettingNumber('waitTimeAfterFlip', 0);
     const waitTimeBetweenCards = Utils.getSettingNumber('waitTimeBetweenCards', 0);
     const newCardsPerDay = Utils.getSettingNumber('newCardsPerDay', 20);
+    const speakFront = AppState.settings.speakFront !== false;
+    const speakBack = AppState.settings.speakBack !== false;
     
     container.innerHTML = '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">bar_chart</span>学習統計</h3><div class="stats-detail">' +
       '<div class="stat-row stat-clickable" onclick="App.showCardListWithFilter(\'all\')"><span>総カード数</span><span>' + stats.total + '枚</span></div>' +
@@ -1777,13 +1818,19 @@ const App = {
       '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">add_circle</span>新規学習</h3>' +
       '<div class="setting-slider-row"><label>1日の枚数</label><input type="range" id="setting-new-cards" min="5" max="100" step="5" value="' + newCardsPerDay + '"><span id="setting-new-cards-val">' + newCardsPerDay + '枚</span></div></div>' +
       '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">record_voice_over</span>学習モードの設定</h3>' +
+      '<div class="setting-checkbox-row"><label><input type="checkbox" id="setting-speak-front" ' + (speakFront ? 'checked' : '') + '> 表を読み上げる</label></div>' +
+      '<div class="setting-checkbox-row"><label><input type="checkbox" id="setting-speak-back" ' + (speakBack ? 'checked' : '') + '> 裏を読み上げる</label></div>' +
       '<div class="setting-slider-row"><label>英語速度</label><input type="range" id="setting-speech-en" min="0.5" max="2" step="0.1" value="' + speechRateEn + '"><span id="setting-speech-en-val">' + speechRateEn + 'x</span></div>' +
+      '<div class="setting-slider-row"><label>英語音量</label><input type="range" id="setting-volume-en" min="0" max="1" step="0.1" value="' + speechVolumeEn + '"><span id="setting-volume-en-val">' + Math.round(speechVolumeEn * 100) + '%</span></div>' +
       '<div class="setting-slider-row"><label>日本語速度</label><input type="range" id="setting-speech-ja" min="0.5" max="2" step="0.1" value="' + speechRateJa + '"><span id="setting-speech-ja-val">' + speechRateJa + 'x</span></div>' +
+      '<div class="setting-slider-row"><label>日本語音量</label><input type="range" id="setting-volume-ja" min="0" max="1" step="0.1" value="' + speechVolumeJa + '"><span id="setting-volume-ja-val">' + Math.round(speechVolumeJa * 100) + '%</span></div>' +
       '<div class="setting-slider-row"><label>めくり後</label><input type="range" id="setting-wait-flip" min="0" max="3" step="0.1" value="' + waitTimeAfterFlip + '"><span id="setting-wait-flip-val">' + waitTimeAfterFlip + '秒</span></div>' +
       '<div class="setting-slider-row"><label>カード間</label><input type="range" id="setting-wait-card" min="0" max="3" step="0.1" value="' + waitTimeBetweenCards + '"><span id="setting-wait-card-val">' + waitTimeBetweenCards + '秒</span></div></div>' +
       '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">list_alt</span>一覧読み上げの設定</h3>' +
       '<div class="setting-slider-row"><label>英語速度</label><input type="range" id="setting-list-speech-en" min="0.5" max="2" step="0.1" value="' + listSpeechRateEn + '"><span id="setting-list-speech-en-val">' + listSpeechRateEn + 'x</span></div>' +
+      '<div class="setting-slider-row"><label>英語音量</label><input type="range" id="setting-list-volume-en" min="0" max="1" step="0.1" value="' + listSpeechVolumeEn + '"><span id="setting-list-volume-en-val">' + Math.round(listSpeechVolumeEn * 100) + '%</span></div>' +
       '<div class="setting-slider-row"><label>日本語速度</label><input type="range" id="setting-list-speech-ja" min="0.5" max="2" step="0.1" value="' + listSpeechRateJa + '"><span id="setting-list-speech-ja-val">' + listSpeechRateJa + 'x</span></div>' +
+      '<div class="setting-slider-row"><label>日本語音量</label><input type="range" id="setting-list-volume-ja" min="0" max="1" step="0.1" value="' + listSpeechVolumeJa + '"><span id="setting-list-volume-ja-val">' + Math.round(listSpeechVolumeJa * 100) + '%</span></div>' +
       '<div class="setting-slider-row"><label>フィールド間</label><input type="range" id="setting-list-wait-fields" min="0" max="3" step="0.1" value="' + listWaitBetweenFields + '"><span id="setting-list-wait-fields-val">' + listWaitBetweenFields + '秒</span></div>' +
       '<div class="setting-slider-row"><label>カード間</label><input type="range" id="setting-list-wait-cards" min="0" max="3" step="0.1" value="' + listWaitBetweenCards + '"><span id="setting-list-wait-cards-val">' + listWaitBetweenCards + '秒</span></div></div>' +
       '<div class="setting-section"><h3><span class="material-icons" style="vertical-align:middle;margin-right:4px;">link</span>データ管理</h3>' +
@@ -1797,12 +1844,26 @@ const App = {
     const self = this;
     
     // 設定を保存するヘルパー関数
-    function saveSettingToServer(key, value) {
-      google.script.run
-        .withSuccessHandler(() => console.log('Setting saved:', key, value))
-        .withFailureHandler(e => console.error('Failed to save setting:', e))
-        .saveSetting(key, value);
+    async function saveSettingToServer(key, value) {
+      try {
+        await DataAdapter.saveSetting(key, value);
+        console.log('Setting saved:', key, value);
+      } catch (e) {
+        console.error('Failed to save setting:', e);
+      }
     }
+    
+    // 表を読み上げる
+    document.getElementById('setting-speak-front').addEventListener('change', function() {
+      AppState.settings.speakFront = this.checked;
+      saveSettingToServer('speakFront', this.checked);
+    });
+    
+    // 裏を読み上げる
+    document.getElementById('setting-speak-back').addEventListener('change', function() {
+      AppState.settings.speakBack = this.checked;
+      saveSettingToServer('speakBack', this.checked);
+    });
     
     // 新規学習枚数
     document.getElementById('setting-new-cards').addEventListener('input', function() {
@@ -1825,6 +1886,16 @@ const App = {
       saveSettingToServer('speechRateEn', parseFloat(this.value));
     });
     
+    // 読み上げ音量（英語）
+    document.getElementById('setting-volume-en').addEventListener('input', function() {
+      const val = parseFloat(this.value);
+      document.getElementById('setting-volume-en-val').textContent = Math.round(val * 100) + '%';
+      AppState.settings.speechVolumeEn = val;
+    });
+    document.getElementById('setting-volume-en').addEventListener('change', function() {
+      saveSettingToServer('speechVolumeEn', parseFloat(this.value));
+    });
+    
     // 読み上げ速度（日本語）
     document.getElementById('setting-speech-ja').addEventListener('input', function() {
       const val = parseFloat(this.value);
@@ -1833,6 +1904,16 @@ const App = {
     });
     document.getElementById('setting-speech-ja').addEventListener('change', function() {
       saveSettingToServer('speechRateJa', parseFloat(this.value));
+    });
+    
+    // 読み上げ音量（日本語）
+    document.getElementById('setting-volume-ja').addEventListener('input', function() {
+      const val = parseFloat(this.value);
+      document.getElementById('setting-volume-ja-val').textContent = Math.round(val * 100) + '%';
+      AppState.settings.speechVolumeJa = val;
+    });
+    document.getElementById('setting-volume-ja').addEventListener('change', function() {
+      saveSettingToServer('speechVolumeJa', parseFloat(this.value));
     });
     
     // 一覧表示の読み上げ速度（英語）
@@ -1845,6 +1926,16 @@ const App = {
       saveSettingToServer('listSpeechRateEn', parseFloat(this.value));
     });
     
+    // 一覧表示の読み上げ音量（英語）
+    document.getElementById('setting-list-volume-en').addEventListener('input', function() {
+      const val = parseFloat(this.value);
+      document.getElementById('setting-list-volume-en-val').textContent = Math.round(val * 100) + '%';
+      AppState.settings.listSpeechVolumeEn = val;
+    });
+    document.getElementById('setting-list-volume-en').addEventListener('change', function() {
+      saveSettingToServer('listSpeechVolumeEn', parseFloat(this.value));
+    });
+    
     // 一覧表示の読み上げ速度（日本語）
     document.getElementById('setting-list-speech-ja').addEventListener('input', function() {
       const val = parseFloat(this.value);
@@ -1853,6 +1944,16 @@ const App = {
     });
     document.getElementById('setting-list-speech-ja').addEventListener('change', function() {
       saveSettingToServer('listSpeechRateJa', parseFloat(this.value));
+    });
+    
+    // 一覧表示の読み上げ音量（日本語）
+    document.getElementById('setting-list-volume-ja').addEventListener('input', function() {
+      const val = parseFloat(this.value);
+      document.getElementById('setting-list-volume-ja-val').textContent = Math.round(val * 100) + '%';
+      AppState.settings.listSpeechVolumeJa = val;
+    });
+    document.getElementById('setting-list-volume-ja').addEventListener('change', function() {
+      saveSettingToServer('listSpeechVolumeJa', parseFloat(this.value));
     });
     
     // 待機時間（めくり後）
@@ -1900,4 +2001,3 @@ const App = {
 };
 
 document.addEventListener('DOMContentLoaded', function() { App.init(); });
-</script>

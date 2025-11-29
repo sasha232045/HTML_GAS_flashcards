@@ -6,7 +6,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  
+  <!-- ============================================
+       モード切り替え方法:
+       
+       【GASモード】デフォルト
+       - そのままGASにデプロイ
+       
+       【ローカルモード】file://で直接開く場合
+       1. 下の「GASモード」行をコメントアウト
+       2. 「ローカルモード」行のコメントを解除
+       ============================================ -->
+  
+  <!-- GASモード -->
   <?!= include('Style'); ?>
+  
+  <!-- ローカルモード（GASモード行をコメントアウトして有効化）
+  <link rel="stylesheet" href="Style.css">
+  -->
+  
 </head>
 <body>
   <div id="app">
@@ -436,8 +454,24 @@
     <footer class="footer">
       <p>GAS フラッシュカード v1.0.0</p>
     </footer>
+    
+    <!-- ローカルモード用: データエクスポートボタン（ローカルモード時のみ表示） -->
+    <div id="local-mode-controls" style="display: none;">
+      <button class="btn btn-secondary" onclick="DataExporter.exportProgress()" style="position: fixed; bottom: 50px; right: 20px; z-index: 1000;">
+        <span class="material-icons">download</span>
+        進捗を保存
+      </button>
+    </div>
   </div>
 
+  <!-- GASモード -->
+  <?!= include('data-adapter'); ?>
   <?!= include('Script'); ?>
+  
+  <!-- ローカルモード（GASモード行をコメントアウトして有効化）
+  <script src="data-adapter.js"></script>
+  <script src="Script.js"></script>
+  -->
+  
 </body>
 </html>
